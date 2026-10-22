@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Space Trucker - Prototipo docking 2D v0.1</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+/*
+  SPACE TRUCKER - prototipo docking 2D
+  Obiettivo del prototipo: capire se la manovra con inerzia e' piacevole.
+  Un solo file, nessuna dipendenza. Tutti i numeri da regolare sono in P (sotto).
+*/
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, PANEL = 280;
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  PANEL = clamp(Math.round(W * 0.3), 230, 300);
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------------------------------------------------------------------------
+// Parametri di gioco (unita': metri, secondi, radianti)
+// ---------------------------------------------------------------------------
+const P = {
+  shipR: 3.5, noseLen: 4,
+  main: 2.0, reverse: 1.0, lateral: 0.7,       // accelerazioni (m/s^2)
+  torque: 0.9, wMax: 1.2, assistTorque: 0.7,   // rotazione (rad/s^2, rad/s)
+  fine: 0.3,                                   // fattore con SHIFT (controllo fine)
+  fuel: 60, useMain: 0.5, useRev: 0.3, useLat: 0.25, useRot: 0.12,
+  hubR: 16, boomR: 44,                         // geometria stazione
+  maxClose: 1.2, maxLat: 0.8, maxAng: 12, maxRot: 0.12,  // tolleranze di aggancio
+  startMin: 220, startVar: 60,
+};
+const VERSION = '0.1';                         // da aggiornare a ogni build condivisa
+const SPINS = [0, 0.03, 0.06];                 // rad/s della stazione
+const SPIN_NAMES = ['ferma', 'lenta', 'veloce'];
+const opts = { assist: true, lateral: true, spin: 0 };
+
+// ---------------------------------------------------------------------------
+// Utilita'
+// ---------------------------------------------------------------------------
+function angDiff(a, b) {
+  let d = (a - b) % (2 * Math.PI);
+  if (d > Math.PI) d -= 2 * Math.PI;
+  if (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+const COL = { bg: '#05070d', st: '#6f8fb0', port: '#ffb347', ship: '#7fe7ff',
+              good: '#6bff9a', warn: '#ffd75e', bad: '#ff6b6b', dim: '#6c7a89', txt: '#d6e2ee' };
+
+// ---------------------------------------------------------------------------
+// Stato
+// ---------------------------------------------------------------------------
+let S, mode = 'menu', banner = null, showPred = true;
+const cam = { x: 0, y: 0, s: 1 };
+
+function newRun() {
+  const ang = Math.random() * Math.PI * 2;
+  const dist = P.startMin + Math.random() * P.startVar;
+  S = {
+    clock: 0, t: 0,                            // clock: fase stazione; t: tempo di missione
+    psi0: Math.random() * Math.PI * 2, ws: SPINS[opts.spin],
+    x: Math.cos(ang) * dist, y: Math.sin(ang) * dist,
+    vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5,
+    th: Math.random() * Math.PI * 2, w: (Math.random() - 0.5) * 0.2,
+    fuel: P.fuel, hull: 100, dmg: 0, prevA: 1, flash: 0,
+    fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
+    result: null,
+  };
+  banner = null;
+  updateCam(0, true);
+}
+
+// ---------------------------------------------------------------------------
+// Stazione: geometria e porto di attracco (ruotano con la stazione)
+// ---------------------------------------------------------------------------
+function portAt(tc) {
+  const psi = S.psi0 + S.ws * tc;
+  const nx = Math.cos(psi), ny = Math.sin(psi);
+  const px = nx * P.boomR, py = ny * P.boomR;
+  return { psi, nx, ny, tx: -ny, ty: nx, px, py, vx: -S.ws * py, vy: S.ws * px };
+}
+
+function solids() {
+  const p = portAt(S.clock);
+  const q = S.psi0 + Math.PI + S.ws * S.clock;
+  const ex = Math.cos(q) * 34, ey = Math.sin(q) * 34;
+  const cx = p.px - p.nx, cy = p.py - p.ny;     // piastra di attracco (spessore 2 m)
+  return [
+    { type: 'c', x: 0, y: 0, r: P.hubR },
+    { type: 's', ax: 0, ay: 0, bx: p.px - 2 * p.nx, by: p.py - 2 * p.ny, r: 1.5 },
+    { type: 's', ax: cx + p.tx * 3, ay: cy + p.ty * 3, bx: cx + p.tx * 12, by: cy + p.ty * 12, r: 1 },
+    { type: 's', ax: cx - p.tx * 3, ay: cy - p.ty * 3, bx: cx - p.tx * 12, by: cy - p.ty * 12, r: 1 },
+    { type: 's', ax: 0, ay: 0, bx: ex, by: ey, r: 1.5 },
+    { type: 'c', x: ex, y: ey, r: 6 },
+  ];
+}
+
+function closestOnSeg(o, x, y) {
+  const dx = o.bx - o.ax, dy = o.by - o.ay;
+  const t = clamp(((x - o.ax) * dx + (y - o.ay) * dy) / (dx * dx + dy * dy), 0, 1);
+  return [o.ax + dx * t, o.ay + dy * t];
+}
+
+// ---------------------------------------------------------------------------
+// Telemetria: tutto cio' che serve al pannello e alla valutazione dell'aggancio
+// ---------------------------------------------------------------------------
+function telemetry() {
+  const p = portAt(S.clock);
+  const hx = Math.cos(S.th), hy = Math.sin(S.th);
+  const nx = S.x + hx * P.noseLen, ny = S.y + hy * P.noseLen;
+  const dx = nx - p.px, dy = ny - p.py;
+  const rvx = S.vx - p.vx, rvy = S.vy - p.vy;
+  const closing = -(rvx * p.nx + rvy * p.ny);
+  return {
+    p, a: dx * p.nx + dy * p.ny, l: dx * p.tx + dy * p.ty,
+    dist: Math.hypot(dx, dy), closing,
+    lat: Math.abs(rvx * p.tx + rvy * p.ty),
+    err: angDiff(S.th, p.psi + Math.PI) * 180 / Math.PI,
+    rot: S.w - S.ws,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Input
+// ---------------------------------------------------------------------------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (mode === 'menu') {
+    if (e.code === 'Digit1') { opts.assist = !opts.assist; newRun(); }
+    if (e.code === 'Digit2') { opts.lateral = !opts.lateral; newRun(); }
+    if (e.code === 'Digit3') { opts.spin = (opts.spin + 1) % SPINS.length; newRun(); }
+    if (e.code === 'Enter' || e.code === 'Space') mode = 'run';
+  } else if (mode === 'run') {
+    if (e.code === 'KeyR') { newRun(); }
+    if (e.code === 'KeyM' || e.code === 'Escape') { mode = 'menu'; newRun(); }
+    if (e.code === 'KeyP') showPred = !showPred;
+  } else if (mode === 'done') {
+    if (e.code === 'KeyR' || e.code === 'Enter') { newRun(); mode = 'run'; }
+    if (e.code === 'KeyM') { mode = 'menu'; newRun(); }
+  }
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+const down = (...c) => c.some(k => keys[k]);
+
+// ---------------------------------------------------------------------------
+// Fisica
+// ---------------------------------------------------------------------------
+function damage(amount, why) {
+  if (amount <= 0) return;
+  S.hull -= amount; S.dmg += amount; S.flash = 1;
+  banner = { text: `${why}  (-${Math.round(amount)} scafo)`, t: 4, col: COL.bad };
+  if (S.hull <= 0) finish('destroyed');
+}
+
+function step(dt) {
+  S.clock += dt;
+  if (mode !== 'run') return;
+  S.t += dt;
+
+  const k = down('ShiftLeft', 'ShiftRight') ? P.fine : 1;
+  const hx = Math.cos(S.th), hy = Math.sin(S.th);
+  let ax = 0, ay = 0, tq = 0;
+  const f = S.fl;
+  f.main = f.rev = f.latL = f.latR = f.rotL = f.rotR = 0;
+  const hasFuel = S.fuel > 0;
+
+  if (hasFuel) {
+    if (down('KeyW', 'ArrowUp'))   { ax += hx * P.main * k; ay += hy * P.main * k; S.fuel -= P.useMain * k * dt; f.main = k; }
+    if (down('KeyS', 'ArrowDown')) { ax -= hx * P.reverse * k; ay -= hy * P.reverse * k; S.fuel -= P.useRev * k * dt; f.rev = k; }
+    if (opts.lateral) {
+      if (down('KeyQ')) { ax += -hy * P.lateral * k; ay += hx * P.lateral * k; S.fuel -= P.useLat * k * dt; f.latL = k; }
+      if (down('KeyE')) { ax -= -hy * P.lateral * k; ay -= hx * P.lateral * k; S.fuel -= P.useLat * k * dt; f.latR = k; }
+    }
+    if (down('KeyA', 'ArrowLeft'))  { tq += P.torque * k; S.fuel -= P.useRot * k * dt; f.rotL = k; }
+    if (down('KeyD', 'ArrowRight')) { tq -= P.torque * k; S.fuel -= P.useRot * k * dt; f.rotR = k; }
+  }
+  if (S.fuel < 0) S.fuel = 0;
+
+  if (tq === 0 && opts.assist && hasFuel) {      // assistente: mantiene l'assetto relativo alla stazione
+    const diff = S.ws - S.w;
+    const dw = Math.sign(diff) * Math.min(Math.abs(diff), P.assistTorque * dt);
+    S.w += dw;
+    if (Math.abs(diff) > 0.002) S.fuel -= P.useRot * 0.3 * dt;
+  }
+  S.w = clamp(S.w + tq * dt, -P.wMax, P.wMax);
+  S.th += S.w * dt;
+  S.vx += ax * dt; S.vy += ay * dt;
+  S.x += S.vx * dt; S.y += S.vy * dt;
+
+  collide();
+  checkDock();
+  if (mode === 'run') {
+    const d = Math.hypot(S.x, S.y);
+    if (d > 600 || (S.fuel <= 0 && d > 450)) finish('drift');
+  }
+}
+
+function collide() {
+  for (const o of solids()) {
+    const [cx, cy] = o.type === 'c' ? [o.x, o.y] : closestOnSeg(o, S.x, S.y);
+    const dx = S.x - cx, dy = S.y - cy;
+    const d = Math.hypot(dx, dy) || 1e-6, min = P.shipR + o.r;
+    if (d >= min) continue;
+    const nx = dx / d, ny = dy / d;
+    S.x += nx * (min - d); S.y += ny * (min - d);
+    const qx = cx + nx * o.r, qy = cy + ny * o.r;            // punto di contatto
+    const vn = (S.vx + S.ws * qy) * nx + (S.vy - S.ws * qx) * ny;
+    if (vn < 0) {
+      S.vx -= 1.3 * vn * nx; S.vy -= 1.3 * vn * ny;
+      damage(Math.max(0, -vn - 0.4) * 8, 'Urto con la stazione');
+    }
+  }
+}
+
+function checkDock() {
+  const T = telemetry();
+  if (S.prevA > 0 && T.a <= 0 && Math.abs(T.l) < 3) {
+    const m = [T.closing / P.maxClose, T.lat / P.maxLat, Math.abs(T.err) / P.maxAng, Math.abs(T.rot) / P.maxRot];
+    if (m.every(v => v <= 1)) {
+      finish('docked', m.every(v => v <= 0.5));
+      return;
+    }
+    const names = ['velocita\' di avvicinamento', 'velocita\' laterale', 'allineamento', 'rotazione relativa'];
+    const bad = names.filter((_, i) => m[i] > 1);
+    const excess = m.reduce((s, v) => s + Math.max(0, v - 1), 0);
+    const p = T.p;
+    S.vx = p.vx + p.nx * (0.5 + 0.3 * Math.max(0, T.closing));
+    S.vy = p.vy + p.ny * (0.5 + 0.3 * Math.max(0, T.closing));
+    S.x += p.nx * (0.3 - T.a); S.y += p.ny * (0.3 - T.a);
+    S.prevA = 0.3;
+    damage(Math.min(45, 10 + 15 * excess), 'Aggancio fallito: ' + bad.join(', ') + ' fuori tolleranza');
+    return;
+  }
+  S.prevA = T.a;
+}
+
+function finish(kind, perfect) {
+  mode = 'done';
+  const speedBonus = Math.round(clamp(600 - 6 * S.t, 0, 600));
+  const fuelBonus = Math.round(S.fuel * 3);
+  const dmgPenalty = Math.round(S.dmg * 8);
+  S.result = { kind, perfect, speedBonus, fuelBonus, dmgPenalty,
+    perfectBonus: perfect ? 300 : 0 };
+  S.result.score = kind === 'docked'
+    ? Math.max(0, 400 + speedBonus + fuelBonus + S.result.perfectBonus - dmgPenalty) : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Camera (zoom automatico: piu' ti avvicini, piu' ingrandisce)
+// ---------------------------------------------------------------------------
+function updateCam(dt, snap) {
+  const p = portAt(S.clock);
+  const mx = (S.x + p.px) / 2, my = (S.y + p.py) / 2;
+  const dist = Math.hypot(S.x - p.px, S.y - p.py);
+  const half = Math.max(28, dist * 0.6 + 14);
+  const target = 0.5 * Math.min(W - PANEL, H) / half;
+  if (snap) { cam.x = mx; cam.y = my; cam.s = target; return; }
+  const f = 1 - Math.exp(-dt * 3);
+  cam.x += (mx - cam.x) * f; cam.y += (my - cam.y) * f;
+  cam.s *= Math.pow(target / cam.s, f);
+}
+const sx = x => (W - PANEL) / 2 + (x - cam.x) * cam.s;
+const sy = y => H / 2 - (y - cam.y) * cam.s;
+
+// ---------------------------------------------------------------------------
+// Disegno
+// ---------------------------------------------------------------------------
+const stars = Array.from({ length: 160 }, () => ({ x: Math.random(), y: Math.random(), d: 0.2 + Math.random() * 0.8 }));
+
+function line(x1, y1, x2, y2, col, w, dash) {
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash || []);
+  ctx.beginPath(); ctx.moveTo(sx(x1), sy(y1)); ctx.lineTo(sx(x2), sy(y2)); ctx.stroke();
+  ctx.setLineDash([]);
+}
+function circle(x, y, r, stroke, fill, w) {
+  ctx.beginPath(); ctx.arc(sx(x), sy(y), r * cam.s, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = w || 1.5; ctx.stroke(); }
+}
+function text(s, x, y, col, size, align) {
+  ctx.fillStyle = col || COL.txt; ctx.font = `${size || 13}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textAlign = align || 'left'; ctx.fillText(s, x, y);
+}
+
+function drawStars() {
+  ctx.fillStyle = '#9fb4c8';
+  const aw = W - PANEL;
+  for (const s of stars) {
+    const x = (((s.x * aw - cam.x * cam.s * s.d * 0.05) % aw) + aw) % aw;
+    const y = (((s.y * H + cam.y * cam.s * s.d * 0.05) % H) + H) % H;
+    ctx.globalAlpha = 0.25 + 0.5 * s.d;
+    ctx.fillRect(x, y, 1.4 * s.d + 0.4, 1.4 * s.d + 0.4);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawStation() {
+  const p = portAt(S.clock);
+  const q = S.psi0 + Math.PI + S.ws * S.clock;
+  const ex = Math.cos(q) * 34, ey = Math.sin(q) * 34;
+  const bw = Math.max(1.5, 3 * cam.s);
+  line(0, 0, ex, ey, COL.st, bw);
+  circle(ex, ey, 6, COL.st, '#0e1722', 2);
+  line(0, 0, p.px - 2 * p.nx, p.py - 2 * p.ny, COL.st, bw);
+  circle(0, 0, P.hubR, COL.st, '#0e1722', 2);
+  circle(0, 0, P.hubR * 0.6, '#35506b', null, 1);
+  for (let i = 0; i < 4; i++) {                               // raggi del mozzo (mostrano la rotazione)
+    const a = S.ws * S.clock + i * Math.PI / 2 + 0.5;
+    line(Math.cos(a) * 4, Math.sin(a) * 4, Math.cos(a) * 14, Math.sin(a) * 14, '#35506b', 1);
+  }
+  // piastra di attracco con la finestra del porto
+  const cx = p.px - p.nx, cy = p.py - p.ny;
+  const pw = Math.max(2, 2 * cam.s);
+  line(cx + p.tx * 3, cy + p.ty * 3, cx + p.tx * 12, cy + p.ty * 12, COL.st, pw);
+  line(cx - p.tx * 3, cy - p.ty * 3, cx - p.tx * 12, cy - p.ty * 12, COL.st, pw);
+  line(p.px + p.tx * 3, p.py + p.ty * 3, p.px - p.tx * 3, p.py - p.ty * 3, COL.port, Math.max(1.5, 0.6 * cam.s));
+  // luci guida del porto
+  for (const sgn of [-1, 1]) circle(p.px + p.tx * 3 * sgn + p.nx * 0.5, p.py + p.ty * 3 * sgn + p.ny * 0.5, 0.6, COL.port, COL.port);
+}
+
+function drawGuidance() {
+  const p = portAt(S.clock), L = 130, half = 14 * Math.PI / 180;
+  ctx.fillStyle = 'rgba(255,179,71,0.05)';
+  ctx.beginPath(); ctx.moveTo(sx(p.px), sy(p.py));
+  for (const s of [-1, 1]) {
+    const a = p.psi + s * half;
+    ctx.lineTo(sx(p.px + Math.cos(a) * L), sy(p.py + Math.sin(a) * L));
+  }
+  ctx.closePath(); ctx.fill();
+  line(p.px, p.py, p.px + p.nx * L, p.py + p.ny * L, 'rgba(255,179,71,0.35)', 1, [6, 6]);
+}
+
+function drawPrediction() {
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left';
+  for (let k = 1; k <= 12; k++) {
+    const pp = portAt(S.clock + k);
+    const shx = S.x + S.vx * k, shy = S.y + S.vy * k;
+    ctx.fillStyle = COL.port; ctx.globalAlpha = 0.7;
+    ctx.fillRect(sx(pp.px) - 1.5, sy(pp.py) - 1.5, 3, 3);
+    ctx.fillStyle = COL.ship;
+    ctx.fillRect(sx(shx) - 1.5, sy(shy) - 1.5, 3, 3);
+    ctx.globalAlpha = 1;
+    if (k % 4 === 0) {
+      ctx.fillStyle = COL.port; ctx.fillText(k + 's', sx(pp.px) + 5, sy(pp.py) - 5);
+      ctx.fillStyle = COL.ship; ctx.fillText(k + 's', sx(shx) + 5, sy(shy) - 5);
+    }
+  }
+}
+
+function drawShip() {
+  const sxp = sx(S.x), syp = sy(S.y), sc = Math.max(cam.s, 1.6);
+  const aim = P.noseLen;
+  line(S.x + Math.cos(S.th) * aim, S.y + Math.sin(S.th) * aim,
+       S.x + Math.cos(S.th) * (aim + 140), S.y + Math.sin(S.th) * (aim + 140),
+       'rgba(127,231,255,0.25)', 1, [3, 7]);
+  ctx.save();
+  ctx.translate(sxp, syp); ctx.rotate(-S.th); ctx.scale(sc, sc);
+  const f = S.fl;
+  ctx.fillStyle = '#ffd08a';
+  if (f.main) { ctx.beginPath(); ctx.moveTo(-3, -1.2); ctx.lineTo(-3 - 4 * f.main - Math.random() * 1.5, 0); ctx.lineTo(-3, 1.2); ctx.fill(); }
+  ctx.fillStyle = '#bfe9ff';
+  const puff = (x, y, dx, dy) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 2.2, y + dy * 2.2); ctx.lineWidth = 0.7; ctx.strokeStyle = '#bfe9ff'; ctx.stroke(); };
+  if (f.rev) { puff(2.5, 1.8, 1, 0); puff(2.5, -1.8, 1, 0); }
+  if (f.latL) puff(0, -2.5, 0, -1);
+  if (f.latR) puff(0, 2.5, 0, 1);
+  if (f.rotL) { puff(3, 2.5, 0, 1); puff(-3, -2.5, 0, -1); }
+  if (f.rotR) { puff(3, -2.5, 0, -1); puff(-3, 2.5, 0, 1); }
+  ctx.fillStyle = S.flash > 0 ? '#ff8a8a' : '#10202e';
+  ctx.strokeStyle = S.flash > 0 ? COL.bad : COL.ship; ctx.lineWidth = 1.2 / sc * Math.max(1, sc / 2);
+  ctx.beginPath();
+  ctx.moveTo(P.noseLen, 0); ctx.lineTo(-3, 3); ctx.lineTo(-1.8, 0); ctx.lineTo(-3, -3); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawRelVelocity(T) {
+  const p = T.p;
+  const rvx = S.vx - p.vx, rvy = S.vy - p.vy;
+  const sp = Math.hypot(rvx, rvy);
+  if (sp < 0.05) return;
+  const len = Math.min(60, sp * 12);
+  line(S.x, S.y, S.x + rvx / sp * len, S.y + rvy / sp * len, COL.good, 1.5);
+}
+
+function level(v, max) { return v <= max ? COL.good : v <= 1.5 * max ? COL.warn : COL.bad; }
+
+function bar(x, y, w, frac, col) {
+  ctx.fillStyle = '#16202b'; ctx.fillRect(x, y, w, 6);
+  ctx.fillStyle = col; ctx.fillRect(x, y, w * clamp(frac, 0, 1), 6);
+}
+
+function row(label, valStr, v, max, y) {
+  const x = W - PANEL + 16, w = PANEL - 32, col = level(v, max);
+  text(label, x, y, COL.dim, 12);
+  text(valStr, x + w, y, col, 14, 'right');
+  ctx.fillStyle = '#16202b'; ctx.fillRect(x, y + 6, w, 5);
+  ctx.fillStyle = col; ctx.fillRect(x, y + 6, w * clamp(v / (2 * max), 0, 1), 5);
+  ctx.fillStyle = COL.txt; ctx.fillRect(x + w / 2 - 1, y + 3, 2, 11);       // limite di tolleranza
+}
+
+function drawHud() {
+  const T = telemetry();
+  ctx.fillStyle = 'rgba(8,13,20,0.92)'; ctx.fillRect(W - PANEL, 0, PANEL, H);
+  ctx.fillStyle = '#1b2a3a'; ctx.fillRect(W - PANEL, 0, 1, H);
+  const x = W - PANEL + 16, w = PANEL - 32;
+  text('DOCKING', x, 28, COL.ship, 15);
+  text('distanza', x, 56, COL.dim, 12); text(T.dist.toFixed(1) + ' m', x + w, 56, COL.txt, 14, 'right');
+  const eta = T.closing > 0.05 && T.a > 0 ? Math.round(T.a / T.closing) + ' s' : '--';
+  text('contatto fra', x, 76, COL.dim, 12); text(eta, x + w, 76, COL.txt, 14, 'right');
+  text('offset laterale', x, 96, COL.dim, 12); text(T.l.toFixed(1) + ' m', x + w, 96, Math.abs(T.l) < 3 ? COL.good : COL.txt, 14, 'right');
+
+  const cl = T.closing;
+  row(cl < 0 ? 'ti allontani' : 'avvicinamento', Math.abs(cl).toFixed(2) + ' m/s', Math.max(0, cl), P.maxClose, 128);
+  row('velocita\' laterale', T.lat.toFixed(2) + ' m/s', T.lat, P.maxLat, 164);
+  row('errore d\'angolo', Math.abs(T.err).toFixed(0) + '°', Math.abs(T.err), P.maxAng, 200);
+  row('rotazione relativa', Math.abs(T.rot).toFixed(2) + ' rad/s', Math.abs(T.rot), P.maxRot, 236);
+  text('la tacca bianca e\' il limite per agganciare', x, 266, COL.dim, 10);
+
+  text('SCAFO', x, 304, COL.dim, 12); bar(x, 310, w, S.hull / 100, S.hull > 50 ? COL.good : S.hull > 20 ? COL.warn : COL.bad);
+  text('PROPELLENTE', x, 340, COL.dim, 12); bar(x, 346, w, S.fuel / P.fuel, S.fuel > 15 ? COL.good : S.fuel > 6 ? COL.warn : COL.bad);
+  const bonus = Math.round(clamp(600 - 6 * S.t, 0, 600));
+  text('tempo', x, 386, COL.dim, 12); text(S.t.toFixed(0) + ' s', x + w, 386, COL.txt, 14, 'right');
+  text('bonus rapidita\'', x, 406, COL.dim, 12); text('+' + bonus, x + w, 406, bonus > 0 ? COL.warn : COL.dim, 14, 'right');
+
+  const opt = `assistente ${opts.assist ? 'SI' : 'no'} | laterali ${opts.lateral ? 'SI' : 'no'} | stazione ${SPIN_NAMES[opts.spin]}`;
+  text(opt, x, H - 112, COL.dim, 11);
+  const help = ['W/S  spinta avanti/indietro', 'A/D  ruota', opts.lateral ? 'Q/E  spinta laterale' : '', 'SHIFT  controllo fine', 'P  previsione   R  riprova   M  menu'];
+  help.forEach((h, i) => text(h, x, H - 90 + i * 17, COL.dim, 12));
+}
+
+function overlay(lines, title, tcol) {
+  const bw = Math.min(560, W - PANEL - 20), bh = 90 + lines.length * 24, bx = (W - PANEL - bw) / 2, by = Math.max(10, H - bh - 24);
+  ctx.fillStyle = 'rgba(5,9,15,0.92)'; ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = tcol; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
+  text(title, bx + bw / 2, by + 42, tcol, 22, 'center');
+  lines.forEach((l, i) => text(l[0], bx + 36, by + 82 + i * 24, l[1] || COL.txt, 14));
+}
+
+function drawOverlays() {
+  if (mode === 'menu') {
+    overlay([
+      ['Porta la nave al porto arancione della stazione e agganciala.', COL.txt],
+      ['Per agganciare devi arrivare PIANO, ALLINEATO e senza ruotare:', COL.txt],
+      ['avvicinamento < 1,2 m/s   laterale < 0,8 m/s', COL.dim],
+      ['angolo < 12 gradi   rotazione < 0,12 rad/s', COL.dim],
+      ['Se sbagli rimbalzi e perdi scafo. Piu\' veloce = piu\' bonus.', COL.txt],
+      ['', COL.txt],
+      [`[1] assistente di assetto: ${opts.assist ? 'SI' : 'no'}   (ti tiene fermo)`, COL.ship],
+      [`[2] propulsori laterali: ${opts.lateral ? 'SI' : 'no'}   (Q/E)`, COL.ship],
+      [`[3] rotazione della stazione: ${SPIN_NAMES[opts.spin]}`, COL.ship],
+      ['', COL.txt],
+      ['W/S spinta  A/D ruota  Q/E laterali  SHIFT fine  P previsione', COL.dim],
+      ['Serve una tastiera. Meglio Chrome, Edge o Firefox.', COL.dim],
+      ['INVIO per iniziare', COL.port],
+    ], 'SPACE TRUCKER  -  docking 2D', COL.ship);
+  } else if (mode === 'done') {
+    const r = S.result;
+    if (r.kind === 'docked') {
+      overlay([
+        [`Tempo: ${S.t.toFixed(0)} s    Propellente rimasto: ${S.fuel.toFixed(0)}    Danni: ${Math.round(S.dmg)}`, COL.txt],
+        ['', COL.txt],
+        ['Base                         +400', COL.txt],
+        [`Rapidita'                    +${r.speedBonus}`, COL.txt],
+        [`Propellente                  +${r.fuelBonus}`, COL.txt],
+        [`Aggancio perfetto            +${r.perfectBonus}`, r.perfect ? COL.good : COL.dim],
+        [`Danni                        -${r.dmgPenalty}`, r.dmgPenalty ? COL.bad : COL.dim],
+        [`PUNTEGGIO: ${r.score}`, COL.warn],
+        ['R / INVIO riprova   M menu', COL.port],
+      ], r.perfect ? 'AGGANCIO PERFETTO' : 'AGGANCIO RIUSCITO', COL.good);
+    } else {
+      overlay([
+        [r.kind === 'destroyed' ? 'Lo scafo ha ceduto.' : 'Sei andato alla deriva.', COL.txt],
+        ['R / INVIO riprova   M menu', COL.port],
+      ], r.kind === 'destroyed' ? 'NAVE DISTRUTTA' : 'ALLA DERIVA', COL.bad);
+    }
+  }
+  if (banner && mode !== 'menu') {
+    ctx.globalAlpha = clamp(banner.t, 0, 1);
+    text(banner.text, (W - PANEL) / 2, 40, banner.col, 15, 'center');
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render() {
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W - PANEL, H); ctx.clip();
+  drawStars(); drawGuidance(); drawStation();
+  if (showPred) drawPrediction();
+  drawRelVelocity(telemetry());
+  drawShip();
+  ctx.restore();
+  text('Space Trucker prototipo docking  v' + VERSION, 12, H - 12, 'rgba(160,180,200,0.55)', 11);
+  drawHud(); drawOverlays();
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo principale (passo fisico fisso a 120 Hz)
+// ---------------------------------------------------------------------------
+let last = performance.now(), acc = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now; acc += dt;
+  const h = 1 / 120;
+  while (acc >= h) { step(h); acc -= h; }
+  if (S.flash > 0) S.flash -= dt * 2;
+  if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
+  updateCam(dt, false);
+  render();
+  requestAnimationFrame(frame);
+}
+newRun();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
