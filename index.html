@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking 2D v0.2</title>
+<title>Space Trucker - Prototipo docking 2D v0.2.1</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -46,7 +46,7 @@ const P = {
   maxClose: 1.2, maxLat: 0.8, maxAng: 12, maxRot: 0.12,  // tolleranze di aggancio
   startMin: 220, startVar: 60,
 };
-const VERSION = '0.2';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.2.1';                         // da aggiornare a ogni build condivisa
 const SPINS = [0, 0.03, 0.06];                 // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'lenta', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0 };
@@ -493,11 +493,19 @@ function drawHud() {
 }
 
 function overlay(lines, title, tcol) {
-  const bw = Math.min(560, W - PANEL - 20), bh = 90 + lines.length * 24, bx = (W - PANEL - bw) / 2, by = Math.max(10, H - bh - 24);
+  // il riquadro si adatta alla riga piu' lunga; se non entra nello schermo il testo si rimpicciolisce
+  const avail = W - PANEL - 20, pad = 36;
+  let size = 14;
+  ctx.font = `${size}px ui-monospace, Menlo, Consolas, monospace`;
+  const widest = Math.max(...lines.map(l => ctx.measureText(l[0]).width), 360);
+  if (widest + pad * 2 > avail) size = Math.max(9, Math.floor(size * (avail - pad * 2) / widest * 10) / 10);
+  const bw = Math.min(avail, widest * size / 14 + pad * 2);
+  const lh = Math.round(size * 1.7), bh = 90 + lines.length * lh;
+  const bx = (W - PANEL - bw) / 2, by = Math.max(10, H - bh - 24);
   ctx.fillStyle = 'rgba(5,9,15,0.92)'; ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = tcol; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
   text(title, bx + bw / 2, by + 42, tcol, 22, 'center');
-  lines.forEach((l, i) => text(l[0], bx + 36, by + 82 + i * 24, l[1] || COL.txt, 14));
+  lines.forEach((l, i) => text(l[0], bx + pad, by + 82 + i * lh, l[1] || COL.txt, size));
 }
 
 function drawOverlays() {
@@ -515,7 +523,7 @@ function drawOverlays() {
       ['', COL.txt],
       ['W/S spinta  A/D ruota  Q/E laterali  SHIFT fine  P previsione', COL.dim],
       ['Serve una tastiera. Meglio Chrome, Edge o Firefox.', COL.dim],
-      ...(LOG_URL ? [['Versione di test: raccoglie dati anonimi di gioco (nessun dato personale).', COL.dim]] : []),
+      ...(LOG_URL ? [['Test: raccoglie dati anonimi di gioco, nessun dato personale.', COL.dim]] : []),
       ['INVIO per iniziare', COL.port],
     ], 'SPACE TRUCKER  -  docking 2D', COL.ship);
   } else if (mode === 'done') {
