@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking 2D v0.2.1</title>
+<title>Space Trucker - Prototipo docking 2D v0.2.2</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -46,7 +46,7 @@ const P = {
   maxClose: 1.2, maxLat: 0.8, maxAng: 12, maxRot: 0.12,  // tolleranze di aggancio
   startMin: 220, startVar: 60,
 };
-const VERSION = '0.2.1';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.2.2';                         // da aggiornare a ogni build condivisa
 const SPINS = [0, 0.03, 0.06];                 // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'lenta', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0 };
@@ -80,16 +80,22 @@ function browserName() {
   return 'altro';
 }
 
+const ESITI = { docked: 'agganciato', destroyed: 'distrutto', drift: 'alla deriva', abandoned: 'abbandonato' };
+const sino = v => (v ? 'si' : 'no');
+let logNote = { text: '', t: 0 };                    // conferma "dati inviati" mostrata a schermo
+
 function logRun(result) {
   if (S.logged || S.t < 2) return;                 // niente righe per prove di pochi secondi
   S.logged = true;
+  const esito = ESITI[result] || result;
   logEvent('run', {
-    attempt: ++attempt, result, perfect: !!(S.result && S.result.perfect),
+    attempt: ++attempt, result: esito, perfect: sino(S.result && S.result.perfect),
     time: Math.round(S.t * 10) / 10, fuel: Math.round(S.fuel), hull: Math.max(0, Math.round(S.hull)),
     dmg: Math.round(S.dmg), bounces: S.bounces, hits: S.hits,
     score: S.result ? S.result.score : 0,
-    assist: opts.assist, lateral: opts.lateral, spin: SPIN_NAMES[opts.spin],
+    assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin],
   });
+  if (LOG_URL) logNote = { text: `dati inviati: tentativo ${attempt} (${esito})`, t: 6 };
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +569,7 @@ function render() {
   drawShip();
   ctx.restore();
   text('Space Trucker prototipo docking  v' + VERSION, 12, H - 12, 'rgba(160,180,200,0.55)', 11);
+  if (logNote.t > 0) text(logNote.text, 12, H - 28, 'rgba(107,255,154,' + Math.min(1, logNote.t) * 0.8 + ')', 11);
   drawHud(); drawOverlays();
 }
 
@@ -576,6 +583,7 @@ function frame(now) {
   while (acc >= h) { step(h); acc -= h; }
   if (S.flash > 0) S.flash -= dt * 2;
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
+  if (logNote.t > 0) logNote.t -= dt;
   updateCam(dt, false);
   render();
   requestAnimationFrame(frame);
