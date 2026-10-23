@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking v0.3</title>
+<title>Space Trucker - Prototipo docking v0.3.1</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -48,9 +48,11 @@ const P = {
   // punteggio (da tarare con i dati dei test)
   scoreBase: 400, speedMax: 600, speedRate: 6,   // rapidita': 600 - 6 punti per ogni secondo, mai sotto zero
   fuelRate: 3, perfectBonus: 300, dmgRate: 8,    // 3 pt/unita' di propellente, +300 se perfetto, -8 pt per ogni 1% di integrita' persa
+  // indice di ingaggio (0-100): media di 3 componenti, ciascuna con il suo tetto
+  engPpm: 30, engIdle: 40, engActive: 0.4,       // 30 pressioni/min = 100; 40 s senza input = 0; 40% del tempo con un tasto premuto = 100
   perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.3';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.3.1';                         // da aggiornare a ogni build condivisa
 const SPINS = [0, 0.02, 0.04, 0.06];           // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'piano', 'medio', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0 };
@@ -90,6 +92,18 @@ function browserName() {
   return 'altro';
 }
 
+// Indice di ingaggio 0-100: quanto il giocatore interagisce, in tre componenti uguali.
+//  frequenza = pressioni al minuto; presenza = quanto a lungo non ha mai mollato (pausa piu' lunga);
+//  attivita' = quota del tempo con almeno un tasto premuto. Fermarsi a osservare e' normale (la nave
+//  prosegue per inerzia), per questo i tetti sono bassi: l'indice serve a confrontare, non a giudicare.
+function engagementIndex() {
+  const t = Math.max(S.t, 0.1);
+  const freq = Math.min(1, (S.presses / (t / 60)) / P.engPpm);
+  const pres = 1 - Math.min(1, Math.max(S.maxIdle, S.idle) / P.engIdle);
+  const att = Math.min(1, (S.active / t) / P.engActive);
+  return Math.round(100 * (freq + pres + att) / 3);
+}
+
 const ESITI = { docked: 'agganciato', destroyed: 'distrutto', drift: 'alla deriva', abandoned: 'abbandonato' };
 const sino = v => (v ? 'si' : 'no');
 let logNote = { text: '', t: 0 };                    // conferma "dati inviati" mostrata a schermo
@@ -108,6 +122,7 @@ function logRun(result) {
     idleMax: Math.round(Math.max(S.maxIdle, S.idle) * 10) / 10,
     firstInput: Math.round((S.firstInput === null ? S.t : S.firstInput) * 10) / 10,
     failClose: S.failClose, failLat: S.failLat, failAng: S.failAng, failRot: S.failRot,
+    engagement: engagementIndex(),
     aids: AIDS_NAMES[S.aidTime.indexOf(Math.max(...S.aidTime))],      // livello usato per piu' tempo
     aidChanges: S.aidSwitches,
     // valori dei 4 parametri nell'ultimo contatto col portellone (vuoti se non c'e' stato contatto)
@@ -147,7 +162,7 @@ function newRun() {
     th: Math.random() * Math.PI * 2, w: (Math.random() - 0.5) * 0.2,
     fuel: P.fuel, hull: 100, dmg: 0, prevA: 1, flash: 0, bounces: 0, hits: 0, logged: false,
     presses: 0, active: 0, idle: 0, maxIdle: 0, firstInput: null,
-    contact: null,
+    contact: null, dock: null,
     failClose: 0, failLat: 0, failAng: 0, failRot: 0, aidTime: [0, 0, 0], aidSwitches: 0,
     fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
     result: null,
@@ -264,6 +279,7 @@ function damage(amount, why) {
 function step(dt) {
   if (mode === 'help') return;                    // guida aperta: tutto fermo
   S.clock += dt;
+  if (mode === 'done' && S.dock) { settleDock(); return; }      // agganciata: la nave segue la stazione
   if (mode !== 'run') return;
   S.t += dt;
   S.aidTime[aids] += dt;
@@ -315,6 +331,19 @@ function step(dt) {
   }
 }
 
+// Dopo l'aggancio la nave diventa solidale con la stazione: in circa un secondo si porta con delicatezza
+// nella posizione ideale (perpendicolare al portellone, muso inserito di 0,8 m) e poi ne segue il moto.
+function settleDock() {
+  const d = S.dock, p = portAt(S.clock);
+  const k = clamp((S.clock - d.t0) / 1.4, 0, 1), e = k * k * (3 - 2 * k);       // andamento dolce
+  const a = d.a + (P.noseLen - 0.8 - d.a) * e;
+  const l = d.l * (1 - e);
+  S.x = p.px + p.nx * a + p.tx * l; S.y = p.py + p.ny * a + p.ty * l;
+  S.th = p.psi + Math.PI + d.e * (1 - e);
+  S.vx = p.vx; S.vy = p.vy; S.w = S.ws;
+  const f = S.fl; f.main = f.rev = f.latL = f.latR = f.rotL = f.rotR = 0;
+}
+
 function collide() {
   for (const o of solids()) {
     const [cx, cy] = o.type === 'c' ? [o.x, o.y] : closestOnSeg(o, S.x, S.y);
@@ -339,6 +368,8 @@ function checkDock() {
     const m = [T.closing / P.maxClose, T.lat / P.maxLat, Math.abs(T.err) / P.maxAng, Math.abs(T.rot) / P.maxRot];
     S.contact = { v: [T.closing, T.lat, Math.abs(T.err), Math.abs(T.rot)], m };      // valori al contatto e rapporto col limite
     if (m.every(v => v <= 1)) {
+      S.dock = { t0: S.clock, a: (S.x - T.p.px) * T.p.nx + (S.y - T.p.py) * T.p.ny, l: (S.x - T.p.px) * T.p.tx + (S.y - T.p.py) * T.p.ty,
+                 e: angDiff(S.th, T.p.psi + Math.PI) };       // posizione e angolo nel sistema del portellone
       finish('docked', m.every(v => v <= P.perfectFrac));
       return;
     }
@@ -487,14 +518,21 @@ function drawShip(showAim) {
   const f = S.fl;
   ctx.fillStyle = '#ffd08a';
   if (f.main) { ctx.beginPath(); ctx.moveTo(-3, -1.2); ctx.lineTo(-3 - 4 * f.main - Math.random() * 1.5, 0); ctx.lineTo(-3, 1.2); ctx.fill(); }
-  ctx.fillStyle = '#bfe9ff';
-  const puff = (x, y, dx, dy) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 2.2, y + dy * 2.2); ctx.lineWidth = 0.7; ctx.strokeStyle = '#bfe9ff'; ctx.stroke(); };
-  if (f.rev) { puff(2.5, 1.8, 1, 0); puff(2.5, -1.8, 1, 0); }
-  // Q spinge la nave a sinistra: il getto esce a destra (e viceversa)
-  if (f.latL) puff(0, 2.5, 0, 1);
-  if (f.latR) puff(0, -2.5, 0, -1);
-  if (f.rotL) { puff(3, 2.5, 0, 1); puff(-3, -2.5, 0, -1); }
-  if (f.rotR) { puff(3, -2.5, 0, -1); puff(-3, 2.5, 0, 1); }
+  // Getti dei piccoli propulsori: stessa fiammella che sfarfalla del motore principale, ma piu' piccola e bianco-grigia.
+  // Partono dal bordo dello scafo e escono nel verso OPPOSTO alla spinta.
+  const jet = (x, y, dx, dy, k) => {
+    const L = (1.7 + Math.random() * 0.8) * (0.55 + 0.45 * k), w = 0.62;          // lunghezza (con SHIFT k=0.3: piu' corto), mezza base
+    const nx = -dy, ny = dx;                                                       // direzione perpendicolare al getto
+    ctx.fillStyle = 'rgba(190,205,220,0.85)';                                      // alone bianco-grigio
+    ctx.beginPath(); ctx.moveTo(x + nx * w, y + ny * w); ctx.lineTo(x + dx * L, y + dy * L); ctx.lineTo(x - nx * w, y - ny * w); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';                                      // nucleo piu' chiaro
+    ctx.beginPath(); ctx.moveTo(x + nx * w * 0.45, y + ny * w * 0.45); ctx.lineTo(x + dx * L * 0.6, y + dy * L * 0.6); ctx.lineTo(x - nx * w * 0.45, y - ny * w * 0.45); ctx.fill();
+  };
+  if (f.rev) { jet(2.6, 0.64, 1, 0, f.rev); jet(2.6, -0.64, 1, 0, f.rev); }         // frenata: getti in avanti
+  if (f.latL) jet(0, 1.72, 0, 1, f.latL);                                            // Q spinge a sinistra: getto a destra
+  if (f.latR) jet(0, -1.72, 0, -1, f.latR);                                          // E spinge a destra: getto a sinistra
+  if (f.rotL) { jet(3, 0.43, 0, 1, f.rotL); jet(-3, -3, 0, -1, f.rotL); }           // A: il muso va a sinistra, la coda a destra
+  if (f.rotR) { jet(3, -0.43, 0, -1, f.rotR); jet(-3, 3, 0, 1, f.rotR); }           // D: il contrario
   ctx.fillStyle = S.flash > 0 ? '#ff8a8a' : '#10202e';
   ctx.strokeStyle = S.flash > 0 ? COL.bad : COL.ship; ctx.lineWidth = 1.2 / sc * Math.max(1, sc / 2);
   ctx.beginPath();
@@ -653,7 +691,7 @@ const HELP = [
   { t: '3/5  COMANDI E SHIFT', l: [
     ["↑ / ↓   (o W / S)   spinta avanti e indietro", T_],
     ["← / →   (o A / D)   ruota la nave", T_],
-    ["Q / E               spinta laterale sinistra e destra", T_],
+    ["Q / E               spinta laterale sinistra e destra (rispetto al muso)", T_],
     ["", T_],
     ["SHIFT non fa niente da solo: si tiene premuto INSIEME a un altro", T_],
     ["tasto di movimento e lo rende più dolce, al 30% della forza.", T_],
