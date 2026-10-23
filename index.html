@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking 2D v0.2.2</title>
+<title>Space Trucker - Prototipo docking v0.3</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -45,27 +45,37 @@ const P = {
   hubR: 16, boomR: 44,                         // geometria stazione
   maxClose: 1.2, maxLat: 0.8, maxAng: 12, maxRot: 0.12,  // tolleranze di aggancio
   startMin: 220, startVar: 60,
+  // punteggio (da tarare con i dati dei test)
+  scoreBase: 400, speedMax: 600, speedRate: 6,   // rapidita': 600 - 6 punti per ogni secondo, mai sotto zero
+  fuelRate: 3, perfectBonus: 300, dmgRate: 8,    // 3 pt/unita' di propellente, +300 se perfetto, -8 pt per ogni 1% di integrita' persa
+  perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.2.2';                         // da aggiornare a ogni build condivisa
-const SPINS = [0, 0.03, 0.06];                 // rad/s della stazione
-const SPIN_NAMES = ['ferma', 'lenta', 'veloce'];
+const VERSION = '0.3';                         // da aggiornare a ogni build condivisa
+const SPINS = [0, 0.02, 0.04, 0.06];           // rad/s della stazione
+const SPIN_NAMES = ['ferma', 'piano', 'medio', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0 };
+const AIDS_NAMES = ['completo', 'essenziale', 'nullo'];
+let aids = 0;                                  // livello degli aiuti visivi (P in gioco, [4] nel menu)
 
 // ---------------------------------------------------------------------------
 // Raccolta dati anonimi dei test (nessun IP, nessun cookie: solo un codice casuale per sessione)
 // Per attivarla incolla qui l'indirizzo dell'app web Google (finisce con /exec). Vuoto = disattivata.
 // ---------------------------------------------------------------------------
 const LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';
+// In locale (file aperto con doppio click o localhost) i dati NON si inviano, per non sporcare i test veri.
+// Per forzare l'invio anche in locale: aggiungi ?log=1 all'indirizzo.
+const LOCALE = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+const LOG_ON = !!LOG_URL && (!LOCALE || new URLSearchParams(location.search).get('log') === '1');
 const SESSION = Math.random().toString(36).slice(2, 10);
 let attempt = 0;
 
 function logEvent(type, data) {
-  if (!LOG_URL) return;
+  if (!LOG_ON) return;
   try {
     fetch(LOG_URL, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },     // evita il controllo CORS preliminare
-      body: JSON.stringify(Object.assign({ type, session: SESSION, version: VERSION }, data)),
+      body: JSON.stringify(Object.assign({ type, session: SESSION, version: 'v' + VERSION }, data)),   // 'v' evita che il foglio legga 0.2.2 come un orario
     }).catch(() => {});
   } catch (e) { /* la registrazione non deve mai disturbare il gioco */ }
 }
@@ -94,8 +104,17 @@ function logRun(result) {
     dmg: Math.round(S.dmg), bounces: S.bounces, hits: S.hits,
     score: S.result ? S.result.score : 0,
     assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin],
+    presses: S.presses, active: Math.round(100 * S.active / Math.max(S.t, 0.1)),
+    idleMax: Math.round(Math.max(S.maxIdle, S.idle) * 10) / 10,
+    firstInput: Math.round((S.firstInput === null ? S.t : S.firstInput) * 10) / 10,
+    failClose: S.failClose, failLat: S.failLat, failAng: S.failAng, failRot: S.failRot,
+    aids: AIDS_NAMES[S.aidTime.indexOf(Math.max(...S.aidTime))],      // livello usato per piu' tempo
+    aidChanges: S.aidSwitches,
+    // valori dei 4 parametri nell'ultimo contatto col portellone (vuoti se non c'e' stato contatto)
+    cVel: S.contact ? Math.round(S.contact.v[0] * 100) / 100 : '', cLat: S.contact ? Math.round(S.contact.v[1] * 100) / 100 : '',
+    cAng: S.contact ? Math.round(S.contact.v[2] * 10) / 10 : '', cRot: S.contact ? Math.round(S.contact.v[3] * 1000) / 1000 : '',
   });
-  if (LOG_URL) logNote = { text: `dati inviati: tentativo ${attempt} (${esito})`, t: 6 };
+  if (LOG_ON) logNote = { text: `dati inviati: tentativo ${attempt} (${esito})`, t: 6 };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +132,8 @@ const COL = { bg: '#05070d', st: '#6f8fb0', port: '#ffb347', ship: '#7fe7ff',
 // ---------------------------------------------------------------------------
 // Stato
 // ---------------------------------------------------------------------------
-let S, mode = 'menu', banner = null, showPred = true;
+let S, mode = 'menu', banner = null;
+let helpPage = 0, helpFrom = 'menu', doneDetails = false;
 const cam = { x: 0, y: 0, s: 1 };
 
 function newRun() {
@@ -126,6 +146,9 @@ function newRun() {
     vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5,
     th: Math.random() * Math.PI * 2, w: (Math.random() - 0.5) * 0.2,
     fuel: P.fuel, hull: 100, dmg: 0, prevA: 1, flash: 0, bounces: 0, hits: 0, logged: false,
+    presses: 0, active: 0, idle: 0, maxIdle: 0, firstInput: null,
+    contact: null,
+    failClose: 0, failLat: 0, failAng: 0, failRot: 0, aidTime: [0, 0, 0], aidSwitches: 0,
     fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
     result: null,
   };
@@ -189,25 +212,44 @@ function telemetry() {
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (mode === 'run' && !e.repeat && CONTROLS.includes(e.code)) S.presses++;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (mode === 'menu') {
     if (e.code === 'Digit1') { opts.assist = !opts.assist; newRun(); }
     if (e.code === 'Digit2') { opts.lateral = !opts.lateral; newRun(); }
     if (e.code === 'Digit3') { opts.spin = (opts.spin + 1) % SPINS.length; newRun(); }
+    if (e.code === 'Digit4') aids = (aids + 1) % AIDS_NAMES.length;
+    if (e.code === 'KeyH') openHelp();
     if (e.code === 'Enter' || e.code === 'Space') mode = 'run';
   } else if (mode === 'run') {
-    if (e.code === 'KeyR') { logRun('abandoned'); newRun(); }
+    if (e.code === 'Enter') { logRun('abandoned'); newRun(); }      // ricomincia il tentativo
     if (e.code === 'KeyM' || e.code === 'Escape') { logRun('abandoned'); mode = 'menu'; newRun(); }
-    if (e.code === 'KeyP') showPred = !showPred;
+    if (e.code === 'KeyP' && !e.repeat) {
+      aids = (aids + 1) % AIDS_NAMES.length; S.aidSwitches++;
+      banner = { text: 'aiuti visivi: ' + AIDS_NAMES[aids], t: 2, col: COL.ship };
+    }
+    if (e.code === 'KeyH') openHelp();                 // la guida mette in pausa la partita
   } else if (mode === 'done') {
-    if (e.code === 'KeyR' || e.code === 'Enter') { newRun(); mode = 'run'; }
+    if (e.code === 'Enter') { newRun(); mode = 'run'; }
+    if (e.code === 'Space') doneDetails = !doneDetails;          // come si calcola il punteggio
     if (e.code === 'KeyM') { mode = 'menu'; newRun(); }
+    if (e.code === 'KeyH') openHelp();
+  } else if (mode === 'help') {
+    if (['ArrowRight', 'KeyD', 'Enter', 'Space'].includes(e.code)) {
+      if (helpPage < HELP.length - 1) helpPage++; else closeHelp();
+    }
+    if (['ArrowLeft', 'KeyA'].includes(e.code)) helpPage = Math.max(0, helpPage - 1);
+    if (e.code === 'Escape' || e.code === 'KeyH') closeHelp();
   }
 });
+function openHelp() { helpFrom = mode; mode = 'help'; helpPage = 0; }
+function closeHelp() { mode = helpFrom; }
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-addEventListener('pagehide', () => { if (mode === 'run') logRun('abandoned'); });
+addEventListener('pagehide', () => { if (mode === 'run' || (mode === 'help' && helpFrom === 'run')) logRun('abandoned'); });
 const down = (...c) => c.some(k => keys[k]);
+// tasti che governano la nave (servono solo a misurare l'ingaggio: non si registra quale tasto)
+const CONTROLS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
 // ---------------------------------------------------------------------------
 // Fisica
@@ -215,14 +257,16 @@ const down = (...c) => c.some(k => keys[k]);
 function damage(amount, why) {
   if (amount <= 0) return;
   S.hull -= amount; S.dmg += amount; S.flash = 1;
-  banner = { text: `${why}  (-${Math.round(amount)} scafo)`, t: 4, col: COL.bad };
+  banner = { text: `${why}  (-${Math.round(amount)}% integrità)`, t: 4, col: COL.bad };
   if (S.hull <= 0) finish('destroyed');
 }
 
 function step(dt) {
+  if (mode === 'help') return;                    // guida aperta: tutto fermo
   S.clock += dt;
   if (mode !== 'run') return;
   S.t += dt;
+  S.aidTime[aids] += dt;
 
   const k = down('ShiftLeft', 'ShiftRight') ? P.fine : 1;
   const hx = Math.cos(S.th), hy = Math.sin(S.th);
@@ -230,6 +274,15 @@ function step(dt) {
   const f = S.fl;
   f.main = f.rev = f.latL = f.latR = f.rotL = f.rotR = 0;
   const hasFuel = S.fuel > 0;
+
+  // ingaggio: c'e' almeno un tasto di guida premuto in questo istante?
+  if (CONTROLS.some(c => keys[c])) {
+    S.active += dt;
+    if (S.firstInput === null) S.firstInput = S.t;
+    S.maxIdle = Math.max(S.maxIdle, S.idle); S.idle = 0;
+  } else {
+    S.idle += dt;
+  }
 
   if (hasFuel) {
     if (down('KeyW', 'ArrowUp'))   { ax += hx * P.main * k; ay += hy * P.main * k; S.fuel -= P.useMain * k * dt; f.main = k; }
@@ -284,12 +337,17 @@ function checkDock() {
   const T = telemetry();
   if (S.prevA > 0 && T.a <= 0 && Math.abs(T.l) < 3) {
     const m = [T.closing / P.maxClose, T.lat / P.maxLat, Math.abs(T.err) / P.maxAng, Math.abs(T.rot) / P.maxRot];
+    S.contact = { v: [T.closing, T.lat, Math.abs(T.err), Math.abs(T.rot)], m };      // valori al contatto e rapporto col limite
     if (m.every(v => v <= 1)) {
-      finish('docked', m.every(v => v <= 0.5));
+      finish('docked', m.every(v => v <= P.perfectFrac));
       return;
     }
-    const names = ['velocita\' di avvicinamento', 'velocita\' laterale', 'allineamento', 'rotazione relativa'];
+    const names = ['velocità di avvicinamento', 'scivolamento', 'allineamento', 'rotazione'];
     const bad = names.filter((_, i) => m[i] > 1);
+    if (m[0] > 1) S.failClose++;
+    if (m[1] > 1) S.failLat++;
+    if (m[2] > 1) S.failAng++;
+    if (m[3] > 1) S.failRot++;
     const excess = m.reduce((s, v) => s + Math.max(0, v - 1), 0);
     const p = T.p;
     S.vx = p.vx + p.nx * (0.5 + 0.3 * Math.max(0, T.closing));
@@ -305,13 +363,14 @@ function checkDock() {
 
 function finish(kind, perfect) {
   mode = 'done';
-  const speedBonus = Math.round(clamp(600 - 6 * S.t, 0, 600));
-  const fuelBonus = Math.round(S.fuel * 3);
-  const dmgPenalty = Math.round(S.dmg * 8);
+  const speedBonus = Math.round(clamp(P.speedMax - P.speedRate * S.t, 0, P.speedMax));
+  const fuelBonus = Math.round(S.fuel * P.fuelRate);
+  const dmgPenalty = Math.round(S.dmg * P.dmgRate);
+  doneDetails = false;
   S.result = { kind, perfect, speedBonus, fuelBonus, dmgPenalty,
-    perfectBonus: perfect ? 300 : 0 };
+    perfectBonus: perfect ? P.perfectBonus : 0 };
   S.result.score = kind === 'docked'
-    ? Math.max(0, 400 + speedBonus + fuelBonus + S.result.perfectBonus - dmgPenalty) : 0;
+    ? Math.max(0, P.scoreBase + speedBonus + fuelBonus + S.result.perfectBonus - dmgPenalty) : 0;
   logRun(kind === 'docked' ? 'docked' : kind);
 }
 
@@ -388,7 +447,7 @@ function drawStation() {
   for (const sgn of [-1, 1]) circle(p.px + p.tx * 3 * sgn + p.nx * 0.5, p.py + p.ty * 3 * sgn + p.ny * 0.5, 0.6, COL.port, COL.port);
 }
 
-function drawGuidance() {
+function drawGuidance(withAxis) {
   const p = portAt(S.clock), L = 130, half = 14 * Math.PI / 180;
   ctx.fillStyle = 'rgba(255,179,71,0.05)';
   ctx.beginPath(); ctx.moveTo(sx(p.px), sy(p.py));
@@ -397,7 +456,7 @@ function drawGuidance() {
     ctx.lineTo(sx(p.px + Math.cos(a) * L), sy(p.py + Math.sin(a) * L));
   }
   ctx.closePath(); ctx.fill();
-  line(p.px, p.py, p.px + p.nx * L, p.py + p.ny * L, 'rgba(255,179,71,0.35)', 1, [6, 6]);
+  if (withAxis) line(p.px, p.py, p.px + p.nx * L, p.py + p.ny * L, 'rgba(255,179,71,0.35)', 1, [6, 6]);
 }
 
 function drawPrediction() {
@@ -417,10 +476,10 @@ function drawPrediction() {
   }
 }
 
-function drawShip() {
+function drawShip(showAim) {
   const sxp = sx(S.x), syp = sy(S.y), sc = Math.max(cam.s, 1.6);
   const aim = P.noseLen;
-  line(S.x + Math.cos(S.th) * aim, S.y + Math.sin(S.th) * aim,
+  if (showAim) line(S.x + Math.cos(S.th) * aim, S.y + Math.sin(S.th) * aim,
        S.x + Math.cos(S.th) * (aim + 140), S.y + Math.sin(S.th) * (aim + 140),
        'rgba(127,231,255,0.25)', 1, [3, 7]);
   ctx.save();
@@ -431,8 +490,9 @@ function drawShip() {
   ctx.fillStyle = '#bfe9ff';
   const puff = (x, y, dx, dy) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx * 2.2, y + dy * 2.2); ctx.lineWidth = 0.7; ctx.strokeStyle = '#bfe9ff'; ctx.stroke(); };
   if (f.rev) { puff(2.5, 1.8, 1, 0); puff(2.5, -1.8, 1, 0); }
-  if (f.latL) puff(0, -2.5, 0, -1);
-  if (f.latR) puff(0, 2.5, 0, 1);
+  // Q spinge la nave a sinistra: il getto esce a destra (e viceversa)
+  if (f.latL) puff(0, 2.5, 0, 1);
+  if (f.latR) puff(0, -2.5, 0, -1);
   if (f.rotL) { puff(3, 2.5, 0, 1); puff(-3, -2.5, 0, -1); }
   if (f.rotR) { puff(3, -2.5, 0, -1); puff(-3, 2.5, 0, 1); }
   ctx.fillStyle = S.flash > 0 ? '#ff8a8a' : '#10202e';
@@ -468,6 +528,14 @@ function row(label, valStr, v, max, y) {
   ctx.fillStyle = COL.txt; ctx.fillRect(x + w / 2 - 1, y + 3, 2, 11);       // limite di tolleranza
 }
 
+function fitText(str, x, y, maxW, col, size) {          // rimpicciolisce il testo finche' entra in maxW
+  let sz = size;
+  ctx.font = `${sz}px ui-monospace, Menlo, Consolas, monospace`;
+  const w = ctx.measureText(str).width;
+  if (w > maxW) sz = Math.max(8, Math.floor(size * maxW / w * 10) / 10);
+  text(str, x, y, col, sz);
+}
+
 function drawHud() {
   const T = telemetry();
   ctx.fillStyle = 'rgba(8,13,20,0.92)'; ctx.fillRect(W - PANEL, 0, PANEL, H);
@@ -481,75 +549,245 @@ function drawHud() {
 
   const cl = T.closing;
   row(cl < 0 ? 'ti allontani' : 'avvicinamento', Math.abs(cl).toFixed(2) + ' m/s', Math.max(0, cl), P.maxClose, 128);
-  row('velocita\' laterale', T.lat.toFixed(2) + ' m/s', T.lat, P.maxLat, 164);
+  row('velocità laterale', T.lat.toFixed(2) + ' m/s', T.lat, P.maxLat, 164);
   row('errore d\'angolo', Math.abs(T.err).toFixed(0) + '°', Math.abs(T.err), P.maxAng, 200);
   row('rotazione relativa', Math.abs(T.rot).toFixed(2) + ' rad/s', Math.abs(T.rot), P.maxRot, 236);
-  text('la tacca bianca e\' il limite per agganciare', x, 266, COL.dim, 10);
+  text('la tacca bianca è il limite per agganciare', x, 266, COL.dim, 10);
 
-  text('SCAFO', x, 304, COL.dim, 12); bar(x, 310, w, S.hull / 100, S.hull > 50 ? COL.good : S.hull > 20 ? COL.warn : COL.bad);
+  const hullCol = S.hull > 50 ? COL.good : S.hull > 20 ? COL.warn : COL.bad;
+  text('INTEGRITÀ SCAFO', x, 304, COL.dim, 12); text(Math.max(0, Math.round(S.hull)) + '%', x + w, 304, hullCol, 14, 'right'); bar(x, 310, w, S.hull / 100, hullCol);
   text('PROPELLENTE', x, 340, COL.dim, 12); bar(x, 346, w, S.fuel / P.fuel, S.fuel > 15 ? COL.good : S.fuel > 6 ? COL.warn : COL.bad);
-  const bonus = Math.round(clamp(600 - 6 * S.t, 0, 600));
+  const bonus = Math.round(clamp(P.speedMax - P.speedRate * S.t, 0, P.speedMax));
   text('tempo', x, 386, COL.dim, 12); text(S.t.toFixed(0) + ' s', x + w, 386, COL.txt, 14, 'right');
-  text('bonus rapidita\'', x, 406, COL.dim, 12); text('+' + bonus, x + w, 406, bonus > 0 ? COL.warn : COL.dim, 14, 'right');
+  text('bonus rapidità', x, 406, COL.dim, 12); text('+' + bonus, x + w, 406, bonus > 0 ? COL.warn : COL.dim, 14, 'right');
 
-  const opt = `assistente ${opts.assist ? 'SI' : 'no'} | laterali ${opts.lateral ? 'SI' : 'no'} | stazione ${SPIN_NAMES[opts.spin]}`;
-  text(opt, x, H - 112, COL.dim, 11);
-  const help = ['W/S  spinta avanti/indietro', 'A/D  ruota', opts.lateral ? 'Q/E  spinta laterale' : '', 'SHIFT  controllo fine', 'P  previsione   R  riprova   M  menu'];
-  help.forEach((h, i) => text(h, x, H - 90 + i * 17, COL.dim, 12));
+  fitText(`stabilizzatore ${opts.assist ? 'SI' : 'no'}  |  laterali ${opts.lateral ? 'SI' : 'no'}`, x, H - 142, w, COL.dim, 11);
+  fitText(`stazione ${SPIN_NAMES[opts.spin]}  |  aiuti ${AIDS_NAMES[aids]}`, x, H - 126, w, COL.dim, 11);
+  const help = ['↑ ↓ ← → (o WASD)  spinta e rotazione', opts.lateral ? 'Q / E  spinta laterale' : '', 'SHIFT + tasto  correzioni fini (30%)', 'P aiuti   INVIO riprova', 'M menu   H guida'];
+  help.forEach((h, i) => fitText(h, x, H - 100 + i * 17, w, COL.dim, 12));
 }
 
 function overlay(lines, title, tcol) {
-  // il riquadro si adatta alla riga piu' lunga; se non entra nello schermo il testo si rimpicciolisce
+  // lines: [testo, colore] | [testo, colore, {center:true}] | [null, null, {opt:{n,label,values,sel}}]
+  // Il riquadro si adatta alla riga piu' lunga; se non entra nello schermo il testo si rimpicciolisce.
   const avail = W - PANEL - 20, pad = 36;
+  const font = (sz, bold) => `${bold ? 'bold ' : ''}${sz}px ui-monospace, Menlo, Consolas, monospace`;
+  const optRows = lines.filter(l => l[2] && l[2].opt).map(l => l[2].opt);
+  const measure = sz => {
+    ctx.font = font(sz);
+    const labW = Math.max(0, ...optRows.map(o => ctx.measureText(o.n + '   ' + o.label).width));
+    let w = 360;
+    for (const l of lines) {
+      if (l[2] && l[2].opt) {
+        const chips = l[2].opt.values.reduce((a, v) => a + ctx.measureText(v).width + 14 + 6, 0);
+        w = Math.max(w, labW + 32 + chips);
+      } else w = Math.max(w, ctx.measureText(l[0]).width);
+    }
+    return { w, labW };
+  };
   let size = 14;
-  ctx.font = `${size}px ui-monospace, Menlo, Consolas, monospace`;
-  const widest = Math.max(...lines.map(l => ctx.measureText(l[0]).width), 360);
-  if (widest + pad * 2 > avail) size = Math.max(9, Math.floor(size * (avail - pad * 2) / widest * 10) / 10);
-  const bw = Math.min(avail, widest * size / 14 + pad * 2);
+  const need = measure(size).w;
+  if (need + pad * 2 > avail) size = Math.max(9, Math.floor(size * (avail - pad * 2) / need * 10) / 10);
+  size = Math.max(9, Math.min(size, (H - 120) / (lines.length * 1.7)));          // e che entri in altezza
+  const m = measure(size);
+  const bw = Math.min(avail, m.w + pad * 2);
   const lh = Math.round(size * 1.7), bh = 90 + lines.length * lh;
   const bx = (W - PANEL - bw) / 2, by = Math.max(10, H - bh - 24);
   ctx.fillStyle = 'rgba(5,9,15,0.92)'; ctx.fillRect(bx, by, bw, bh);
   ctx.strokeStyle = tcol; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
   text(title, bx + bw / 2, by + 42, tcol, 22, 'center');
-  lines.forEach((l, i) => text(l[0], bx + pad, by + 82 + i * lh, l[1] || COL.txt, size));
+  lines.forEach((l, i) => {
+    const y = by + 82 + i * lh, ex = l[2] || {};
+    if (ex.opt) {                                         // riga-opzione: etichetta + valori; quello scelto e' evidenziato
+      const o = ex.opt;
+      text(o.n, bx + pad, y, COL.ship, size);
+      text(o.label, bx + pad + ctx.measureText(o.n + '   ').width, y, COL.txt, size);
+      let cx = bx + pad + m.labW + 32;
+      o.values.forEach((v, k) => {
+        ctx.font = font(size);
+        const cw = ctx.measureText(v).width + 14;
+        if (k === o.sel) {
+          ctx.fillStyle = COL.ship; ctx.fillRect(cx, y - size * 1.05, cw, size * 1.5);
+          ctx.font = font(size, true); ctx.fillStyle = '#05070d'; ctx.textAlign = 'center';
+          ctx.fillText(v.toUpperCase(), cx + cw / 2, y);
+        } else text(v, cx + cw / 2, y, COL.dim, size, 'center');
+        cx += cw + 6;
+      });
+    } else if (ex.center) text(l[0], bx + bw / 2, y, l[1] || COL.txt, size, 'center');
+    else text(l[0], bx + pad, y, l[1] || COL.txt, size);
+  });
 }
 
+const T_ = COL.txt, D_ = COL.dim, O_ = COL.port, N_ = COL.ship, B_ = '#ffffff';
+const HELP = [
+  { t: '1/5  OBIETTIVO E AGGANCIO', l: [
+    ["Devi portare il muso della nave nel portellone (la barra arancio", T_],
+    ["sulla stazione) e agganciarla.", T_],
+    ["", T_],
+    ["È necessario rispettare quattro parametri, tutti insieme, nel momento", T_],
+    ["del contatto (i limiti sono nel pannello a destra):", T_],
+    ["  1  velocità       avvicinamento al portellone < 1,2 m/s", N_],
+    ["  2  scivolamento   velocità di lato rispetto al portellone < 0,8 m/s", N_],
+    ["  3  allineamento   asse della nave parallelo all'asse del portellone", N_],
+    ["                    (errore < 12 gradi)", N_],
+    ["  4  rotazione      sincrona rispetto alla stazione < 0,12 rad/s", N_],
+    ["", T_],
+    ["Se non rispetti i parametri d'arrivo rimbalzi e perdi integrità dello", T_],
+    ["scafo; un messaggio ti dice quale parametro era sbagliato.", T_],
+    ["Con l'integrità a 0% la nave è distrutta.", T_],
+  ] },
+  { t: "2/5  L'INERZIA", l: [
+    ["Nello spazio non c'è attrito: ogni spinta cambia la velocità e la", T_],
+    ["nave la mantiene finché non la cambi tu.", T_],
+    ["", T_],
+    ["  Spingi avanti e lasci il tasto: la nave continua ad andare", T_],
+    ["  alla stessa velocità. Non si ferma da sola.", T_],
+    ["  Per fermarti spingi in senso opposto (S o freccia giù).", T_],
+    ["  Lo stesso vale per la rotazione: dopo A o D la nave continua", T_],
+    ["  a girare finché non la contrasti (o la ferma lo stabilizzatore).", T_],
+    ["", T_],
+    ["Il propellente è limitato: ogni spinta lo consuma.", T_],
+    ["Regola pratica: correggi poco e presto, poi aspetta e guarda", O_],
+    ["cosa succede. Le correzioni brusche si pagano dopo.", O_],
+  ] },
+  { t: '3/5  COMANDI E SHIFT', l: [
+    ["↑ / ↓   (o W / S)   spinta avanti e indietro", T_],
+    ["← / →   (o A / D)   ruota la nave", T_],
+    ["Q / E               spinta laterale sinistra e destra", T_],
+    ["", T_],
+    ["SHIFT non fa niente da solo: si tiene premuto INSIEME a un altro", T_],
+    ["tasto di movimento e lo rende più dolce, al 30% della forza.", T_],
+    ["È come premere l'acceleratore solo a metà.", T_],
+    ["", T_],
+    ["Esempio 1: arrivi a 1,5 m/s e il limite è 1,2. Un colpo di S di", N_],
+    ["mezzo secondo toglie 0,5 m/s: troppo. Con SHIFT+S ne toglie 0,15.", N_],
+    ["Esempio 2: sei storto e vuoi correggere piano. Mezzo secondo di A", N_],
+    ["ti fa girare a 0,45 rad/s (il limite è 0,12). Con SHIFT+A, 0,14.", N_],
+    ["Esempio 3: devi spostarti di pochi metri: SHIFT+Q oppure SHIFT+E.", N_],
+    ["", T_],
+    ["Mentre è attivo, in alto compare la scritta CONTROLLO FINE.", D_],
+  ] },
+  { t: '4/5  STABILIZZATORE, LATERALI, STAZIONE', l: [
+    ["FERMA AUTOMATICAMENTE LA ROTAZIONE (opzione 1, lo stabilizzatore)", O_],
+    ["Lavora SOLO sulla rotazione. Se non premi A/D frena la rotazione", T_],
+    ["fino a fermare l'orientamento della nave. Non frena il movimento", T_],
+    ["della nave nello spazio: quello continua.", T_],
+    ["Se la stazione gira, ti fa girare con lei: l'angolo rispetto al", T_],
+    ["portellone resta com'è. Senza stabilizzatore, dopo ogni colpo di A/D", T_],
+    ["la nave ruota all'infinito finché non la contrasti tu.", T_],
+    ["", T_],
+    ["PROPULSORI LATERALI (opzione 2)", O_],
+    ["Q/E spingono la nave di lato senza ruotarla. Senza, per spostarti", T_],
+    ["di lato devi girare, spingere e rigirare.", T_],
+    ["", T_],
+    ["ROTAZIONE STAZIONE (opzione 3)", O_],
+    ["Se gira, il portellone si muove: devi seguirne posizione e rotazione.", T_],
+  ] },
+  { t: '5/5  AIUTI VISIVI E PANNELLO', l: [
+    ["AIUTI VISIVI  (tasto P in gioco, oppure 4 nel menu)", O_],
+    ["  completo    cono, asse del portellone, linea di mira, vettore", T_],
+    ["              velocità (verde), previsione a 4, 8, 12 secondi", T_],
+    ["  essenziale  cono di avvicinamento e linea di mira", T_],
+    ["  nullo       nessun aiuto nel campo di gioco", T_],
+    ["  blind       solo strumenti, senza vedere nave e stazione (in arrivo)", D_],
+    ["", T_],
+    ["PANNELLO A DESTRA  (sempre attivo)", O_],
+    ["  Le barre mostrano quanto sei lontano dal limite per agganciare:", T_],
+    ["  la tacca bianca è il limite. Verde = a posto, giallo = vicino", T_],
+    ["  al limite, rosso = fuori.", T_],
+    ["  distanza: dal muso al portellone.  contatto fra: tempo stimato.", T_],
+    ["  offset laterale: distanza dall'asse (entro 3 m per entrare).", T_],
+  ] },
+];
+
 function drawOverlays() {
-  if (mode === 'menu') {
+  if (mode === 'help') {
+    const pg = HELP[helpPage];
+    overlay([...pg.l, ['', T_], [(helpPage < HELP.length - 1 ? 'INVIO o →: avanti' : 'INVIO: chiudi') + '    ←: indietro    H o Esc: chiudi'
+      + (helpFrom === 'run' ? '   (partita in pausa)' : ''), O_, { center: true }]], 'GUIDA  ' + pg.t, N_);
+  } else if (mode === 'menu') {
     overlay([
-      ['Porta la nave al porto arancione della stazione e agganciala.', COL.txt],
-      ['Per agganciare devi arrivare PIANO, ALLINEATO e senza ruotare:', COL.txt],
-      ['avvicinamento < 1,2 m/s   laterale < 0,8 m/s', COL.dim],
-      ['angolo < 12 gradi   rotazione < 0,12 rad/s', COL.dim],
-      ['Se sbagli rimbalzi e perdi scafo. Piu\' veloce = piu\' bonus.', COL.txt],
-      ['', COL.txt],
-      [`[1] assistente di assetto: ${opts.assist ? 'SI' : 'no'}   (ti tiene fermo)`, COL.ship],
-      [`[2] propulsori laterali: ${opts.lateral ? 'SI' : 'no'}   (Q/E)`, COL.ship],
-      [`[3] rotazione della stazione: ${SPIN_NAMES[opts.spin]}`, COL.ship],
-      ['', COL.txt],
-      ['W/S spinta  A/D ruota  Q/E laterali  SHIFT fine  P previsione', COL.dim],
-      ['Serve una tastiera. Meglio Chrome, Edge o Firefox.', COL.dim],
-      ...(LOG_URL ? [['Test: raccoglie dati anonimi di gioco, nessun dato personale.', COL.dim]] : []),
-      ['INVIO per iniziare', COL.port],
-    ], 'SPACE TRUCKER  -  docking 2D', COL.ship);
+      ['COSA DEVI FARE', O_],
+      ['Porta la nave al portellone arancione della stazione e agganciala.', T_],
+      ['È necessario rispettare quattro parametri (tieni sotto controllo i valori limite nel pannello a destra):', T_],
+      ['  1  velocità:      avvicinamento al portellone < 1,2 m/s', D_],
+      ['  2  scivolamento:  velocità di lato rispetto al portellone < 0,8 m/s', D_],
+      ['  3  allineamento:  asse della nave parallelo all\'asse del portellone (errore < 12 gradi)', D_],
+      ['  4  rotazione:     sincrona rispetto alla stazione < 0,12 rad/s', D_],
+      ["Se non rispetti i parametri d'arrivo rimbalzi e perdi integrità dello scafo.", T_],
+      ['', T_],
+      ['COMANDI', O_],
+      ['  ↑ / ↓   (o W / S)        spinta avanti / indietro', T_],
+      ['  ← / →   (o A / D)        ruota la nave', T_],
+      ['  Q / E                    spinta laterale sinistra / destra', T_],
+      ['  SHIFT + un altro tasto   stesso comando ma al 30% della forza', T_],
+      ['                           (es. SHIFT + S = frenata leggera)', D_],
+      ['  P                        cambia gli aiuti visivi', T_],
+      ['  INVIO                    ricomincia il tentativo', T_],
+      ['  M                        torna al menu', T_],
+      ['', T_],
+      ['OPZIONI  seleziona il numero per cambiarle', O_],
+      [null, null, { opt: { n: '1', label: 'Ferma automaticamente la rotazione della nave', values: ['si', 'no'], sel: opts.assist ? 0 : 1 } }],
+      [null, null, { opt: { n: '2', label: 'Propulsori laterali (Q / E)', values: ['si', 'no'], sel: opts.lateral ? 0 : 1 } }],
+      [null, null, { opt: { n: '3', label: 'Rotazione stazione', values: SPIN_NAMES, sel: opts.spin } }],
+      [null, null, { opt: { n: '4', label: 'Aiuti visivi', values: AIDS_NAMES, sel: aids } }],
+      ['', T_],
+      ['H  guida in 5 pagine (comandi, SHIFT, stabilizzatore, aiuti)', B_],
+      ...(LOG_ON ? [['Test: raccoglie dati anonimi di gioco, nessun dato personale.', D_]]
+                 : LOCALE ? [['ANTEPRIMA LOCALE: i dati di gioco non vengono inviati.', COL.warn]] : []),
+      ['', T_],
+      ['Premi INVIO per iniziare', O_, { center: true }],
+    ], 'SPACE TRUCKER  -  docking', N_);
   } else if (mode === 'done') {
     const r = S.result;
-    if (r.kind === 'docked') {
+    const riga = (a, b) => a.padEnd(28) + b;
+    if (doneDetails) {
+      const lim = [P.maxClose, P.maxLat, P.maxAng, P.maxRot];
+      const unita = ['m/s', 'm/s', '°', 'rad/s'], dec = [2, 2, 0, 2];
+      const nomi = ['velocità', 'scivolamento', 'allineamento', 'rotazione'];
+      const cr = S.contact;
+      const tab = [['AL CONTATTO'.padEnd(15) + 'valore'.padEnd(13) + 'limite'.padEnd(12) + 'per il perfetto', O_]];
+      nomi.forEach((n, i) => {
+        if (!cr) { tab.push([n.padEnd(15) + '-', D_]); return; }
+        const v = cr.v[i], ratio = cr.m[i];
+        const stato = ratio <= P.perfectFrac ? 'perfetto' : ratio <= 1 ? 'ok' : 'fuori limite';
+        const colr = ratio <= P.perfectFrac ? COL.good : ratio <= 1 ? COL.warn : COL.bad;
+        tab.push([n.padEnd(15) + (v.toFixed(dec[i]) + ' ' + unita[i]).padEnd(13) + ('< ' + String(lim[i]).replace('.', ',')).padEnd(12)
+          + ('≤ ' + (lim[i] * P.perfectFrac).toFixed(dec[i]).replace('.', ',')).padEnd(10) + stato, colr]);
+      });
       overlay([
-        [`Tempo: ${S.t.toFixed(0)} s    Propellente rimasto: ${S.fuel.toFixed(0)}    Danni: ${Math.round(S.dmg)}`, COL.txt],
-        ['', COL.txt],
-        ['Base                         +400', COL.txt],
-        [`Rapidita'                    +${r.speedBonus}`, COL.txt],
-        [`Propellente                  +${r.fuelBonus}`, COL.txt],
-        [`Aggancio perfetto            +${r.perfectBonus}`, r.perfect ? COL.good : COL.dim],
-        [`Danni                        -${r.dmgPenalty}`, r.dmgPenalty ? COL.bad : COL.dim],
+        ['COME SI CALCOLA IL PUNTEGGIO', O_],
+        [`Base                  ${P.scoreBase}   aggancio riuscito`, T_],
+        [`Rapidità              ${r.speedBonus >= 0 ? '+' : ''}${r.speedBonus}   ${P.speedMax} - ${P.speedRate} punti per ogni secondo (tempo: ${S.t.toFixed(0)} s)`, T_],
+        [`Propellente           +${r.fuelBonus}   ${P.fuelRate} punti per ogni unità rimasta (${S.fuel.toFixed(0)})`, T_],
+        [`Aggancio perfetto     +${r.perfectBonus}   +${P.perfectBonus} se tutti e 4 i parametri sono entro il ${Math.round(P.perfectFrac * 100)}% del limite`, r.perfect ? COL.good : T_],
+        [`Danni                 -${r.dmgPenalty}   ${P.dmgRate} punti per ogni 1% di integrità persa (${Math.round(S.dmg)}%)`, r.dmgPenalty ? COL.bad : T_],
+        [`TOTALE: ${r.score}`, COL.warn],
+        ['', T_],
+        ...tab,
+        ['', T_],
+        ['SPAZIO: torna al riepilogo     INVIO riprova     M menu', O_, { center: true }],
+      ], 'DETTAGLI DEL PUNTEGGIO', COL.warn);
+    } else if (r.kind === 'docked') {
+      overlay([
+        [`Tempo: ${S.t.toFixed(0)} s    Propellente rimasto: ${S.fuel.toFixed(0)}    Integrità scafo: ${Math.max(0, Math.round(S.hull))}%`, T_],
+        ['', T_],
+        [riga('Base', '+' + P.scoreBase), T_],
+        [riga('Rapidità', '+' + r.speedBonus), T_],
+        [riga('Propellente', '+' + r.fuelBonus), T_],
+        [riga('Aggancio perfetto', '+' + r.perfectBonus), r.perfect ? COL.good : COL.dim],
+        [riga('Penalità per i danni', '-' + r.dmgPenalty), r.dmgPenalty ? COL.bad : COL.dim],
         [`PUNTEGGIO: ${r.score}`, COL.warn],
-        ['R / INVIO riprova   M menu', COL.port],
+        ['', T_],
+        ['SPAZIO: come si calcola il punteggio', D_, { center: true }],
+        ['INVIO riprova     M menu     H guida', O_, { center: true }],
       ], r.perfect ? 'AGGANCIO PERFETTO' : 'AGGANCIO RIUSCITO', COL.good);
     } else {
       overlay([
-        [r.kind === 'destroyed' ? 'Lo scafo ha ceduto.' : 'Sei andato alla deriva.', COL.txt],
-        ['R / INVIO riprova   M menu', COL.port],
+        [r.kind === 'destroyed' ? 'L\'integrità dello scafo è arrivata a 0%.' : 'Sei andato alla deriva.', T_],
+        ['', T_],
+        ['SPAZIO: dettagli dell\'ultimo contatto', D_, { center: true }],
+        ['INVIO riprova     M menu     H guida', O_, { center: true }],
       ], r.kind === 'destroyed' ? 'NAVE DISTRUTTA' : 'ALLA DERIVA', COL.bad);
     }
   }
@@ -563,12 +801,15 @@ function drawOverlays() {
 function render() {
   ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W - PANEL, H); ctx.clip();
-  drawStars(); drawGuidance(); drawStation();
-  if (showPred) drawPrediction();
-  drawRelVelocity(telemetry());
-  drawShip();
+  // livelli: 0 completo, 1 essenziale (cono + mira), 2 nullo (solo il pannello)
+  drawStars();
+  if (aids <= 1) drawGuidance(aids === 0);
+  drawStation();
+  if (aids === 0) { drawPrediction(); drawRelVelocity(telemetry()); }
+  drawShip(aids <= 1);
   ctx.restore();
   text('Space Trucker prototipo docking  v' + VERSION, 12, H - 12, 'rgba(160,180,200,0.55)', 11);
+  if (mode === 'run' && down('ShiftLeft', 'ShiftRight')) text('CONTROLLO FINE  30%', (W - PANEL) / 2, 70, COL.warn, 14, 'center');
   if (logNote.t > 0) text(logNote.text, 12, H - 28, 'rgba(107,255,154,' + Math.min(1, logNote.t) * 0.8 + ')', 11);
   drawHud(); drawOverlays();
 }
