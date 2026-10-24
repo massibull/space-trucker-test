@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking v0.3.1</title>
+<title>Space Trucker - Prototipo docking v0.3.2</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -52,7 +52,7 @@ const P = {
   engPpm: 30, engIdle: 40, engActive: 0.4,       // 30 pressioni/min = 100; 40 s senza input = 0; 40% del tempo con un tasto premuto = 100
   perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.3.1';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.3.2';                         // da aggiornare a ogni build condivisa
 const SPINS = [0, 0.02, 0.04, 0.06];           // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'piano', 'medio', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0 };
@@ -102,6 +102,16 @@ function engagementIndex() {
   const pres = 1 - Math.min(1, Math.max(S.maxIdle, S.idle) / P.engIdle);
   const att = Math.min(1, (S.active / t) / P.engActive);
   return Math.round(100 * (freq + pres + att) / 3);
+}
+
+// Punteggio massimo di tutti i test (senza nomi): si legge dal foglio all'apertura della pagina.
+// Se la lettura fallisce (offline, ecc.) il gioco funziona uguale e semplicemente non mostra la riga.
+let recordGlobale = null;
+function caricaRecord() {
+  if (!LOG_URL) return;
+  fetch(LOG_URL + '?azione=max').then(r => r.json())
+    .then(d => { if (typeof d.max === 'number') recordGlobale = Math.max(recordGlobale || 0, d.max); })
+    .catch(() => {});
 }
 
 const ESITI = { docked: 'agganciato', destroyed: 'distrutto', drift: 'alla deriva', abandoned: 'abbandonato' };
@@ -398,10 +408,15 @@ function finish(kind, perfect) {
   const fuelBonus = Math.round(S.fuel * P.fuelRate);
   const dmgPenalty = Math.round(S.dmg * P.dmgRate);
   doneDetails = false;
+  // record: confronto con il massimo noto PRIMA di questo tentativo, poi lo si aggiorna
+  const nuovoRecord = kind === 'docked' && recordGlobale !== null && P.scoreBase + speedBonus + fuelBonus + (perfect ? P.perfectBonus : 0) - dmgPenalty > recordGlobale;
   S.result = { kind, perfect, speedBonus, fuelBonus, dmgPenalty,
     perfectBonus: perfect ? P.perfectBonus : 0 };
   S.result.score = kind === 'docked'
     ? Math.max(0, P.scoreBase + speedBonus + fuelBonus + S.result.perfectBonus - dmgPenalty) : 0;
+  S.result.newRecord = nuovoRecord;
+  S.result.recordPrima = recordGlobale;
+  if (recordGlobale !== null && S.result.score > recordGlobale) recordGlobale = S.result.score;
   logRun(kind === 'docked' ? 'docked' : kind);
 }
 
@@ -816,6 +831,8 @@ function drawOverlays() {
         [riga('Aggancio perfetto', '+' + r.perfectBonus), r.perfect ? COL.good : COL.dim],
         [riga('Penalità per i danni', '-' + r.dmgPenalty), r.dmgPenalty ? COL.bad : COL.dim],
         [`PUNTEGGIO: ${r.score}`, COL.warn],
+        ...(r.newRecord ? [['CONGRATULAZIONI! HAI STABILITO IL NUOVO PUNTEGGIO MASSIMO', COL.good, { center: true }]]
+          : recordGlobale !== null ? [[`Il punteggio massimo è ${recordGlobale}`, D_, { center: true }]] : []),
         ['', T_],
         ['SPAZIO: come si calcola il punteggio', D_, { center: true }],
         ['INVIO riprova     M menu     H guida', O_, { center: true }],
@@ -873,6 +890,7 @@ logEvent('visit', {
   screen: screen.width + 'x' + screen.height, viewport: innerWidth + 'x' + innerHeight,
   lang: navigator.language, ref: document.referrer ? new URL(document.referrer).hostname : '',
 });
+caricaRecord();
 requestAnimationFrame(frame);
 </script>
 </body>
