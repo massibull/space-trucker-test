@@ -55,7 +55,7 @@ const P = {
 const VERSION = '0.3.2';                         // da aggiornare a ogni build condivisa
 const SPINS = [0, 0.02, 0.04, 0.06];           // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'piano', 'medio', 'veloce'];
-const opts = { assist: true, lateral: true, spin: 0 };
+const opts = { assist: true, lateral: true, spin: 0, sound: true };      // sound: acceso di default (parte al primo tasto premuto: i browser non permettono prima)
 const AIDS_NAMES = ['completo', 'essenziale', 'nullo'];
 let aids = 0;                                  // livello degli aiuti visivi (P in gioco, [4] nel menu)
 
@@ -127,7 +127,7 @@ function logRun(result) {
     time: Math.round(S.t * 10) / 10, fuel: Math.round(S.fuel), hull: Math.max(0, Math.round(S.hull)),
     dmg: Math.round(S.dmg), bounces: S.bounces, hits: S.hits,
     score: S.result ? S.result.score : 0,
-    assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin],
+    assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin], sound: sino(opts.sound),
     presses: S.presses, active: Math.round(100 * S.active / Math.max(S.t, 0.1)),
     idleMax: Math.round(Math.max(S.maxIdle, S.idle) * 10) / 10,
     firstInput: Math.round((S.firstInput === null ? S.t : S.firstInput) * 10) / 10,
@@ -175,6 +175,7 @@ function newRun() {
     contact: null, dock: null,
     failClose: 0, failLat: 0, failAng: 0, failRot: 0, aidTime: [0, 0, 0], aidSwitches: 0,
     fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
+    alarmHull: false, alarmFuel: false,
     result: null,
   };
   banner = null;
@@ -237,15 +238,21 @@ function telemetry() {
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (opts.sound && !SND.ctx) sndInit();                                       // il primo tasto premuto e' il gesto che permette all'audio di partire
   if (mode === 'run' && !e.repeat && CONTROLS.includes(e.code)) S.presses++;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyN' && !e.repeat && mode !== 'help') {                 // suoni si/no, in qualsiasi momento
+    toggleSound();
+    banner = { text: 'suoni: ' + (opts.sound ? 'si' : 'no'), t: 2, col: COL.ship };
+  }
   if (mode === 'menu') {
     if (e.code === 'Digit1') { opts.assist = !opts.assist; newRun(); }
     if (e.code === 'Digit2') { opts.lateral = !opts.lateral; newRun(); }
     if (e.code === 'Digit3') { opts.spin = (opts.spin + 1) % SPINS.length; newRun(); }
     if (e.code === 'Digit4') aids = (aids + 1) % AIDS_NAMES.length;
+    if (e.code === 'Digit5') toggleSound();
     if (e.code === 'KeyH') openHelp();
-    if (e.code === 'Enter' || e.code === 'Space') mode = 'run';
+    if (e.code === 'Enter' || e.code === 'Space') { if (opts.sound) sndInit(); mode = 'run'; }
   } else if (mode === 'run') {
     if (e.code === 'Enter') { logRun('abandoned'); newRun(); }      // ricomincia il tentativo
     if (e.code === 'KeyM' || e.code === 'Escape') { logRun('abandoned'); mode = 'menu'; newRun(); }
@@ -277,6 +284,324 @@ const down = (...c) => c.some(k => keys[k]);
 const CONTROLS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
 // ---------------------------------------------------------------------------
+// Suoni (spenti di default: menu [5] o tasto N). Sintetizzati al volo con WebAudio, nessun file.
+// Provenienza e prove di ascolto: strumenti/prove-suoni.html
+// ---------------------------------------------------------------------------
+function rumore(ctx, sec) {
+  const n = Math.floor(ctx.sampleRate * (sec || 2)), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+function inviluppo(ctx, out, t, attacco, decadimento, picco) {
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(picco, t + attacco);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + attacco + decadimento);
+  g.connect(out);
+  return g;
+}
+function tono(ctx, out, t, f0, f1, tipo, attacco, decadimento, picco) {
+  const o = ctx.createOscillator(); o.type = tipo; o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + attacco + decadimento);
+  o.connect(inviluppo(ctx, out, t, attacco, decadimento, picco));
+  o.start(t); o.stop(t + attacco + decadimento + 0.05);
+}
+function rumoreBruno(ctx, sec) {                       // rumore "bruno": piu' energia nei gravi, come una grande massa
+  const n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  let x = 0; for (let i = 0; i < n; i++) { x = (x + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = x * 3.5; }
+  return b;
+}
+function env20(ctx, out, t, attacco, T20, picco) {
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(picco, t + attacco);
+  g.gain.setTargetAtTime(0, t + attacco, T20 / 2.3);       // scende di 20 dB dopo T20 secondi, di 60 dB dopo 3 x T20
+  g.connect(out);
+  return g;
+}
+function massa20(ctx, out, t, freq, attacco, T20, picco) {   // rumore bruno filtrato: peso senza altezza di nota
+  const n = ctx.createBufferSource(); n.buffer = rumoreBruno(ctx, 2);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq; lp.Q.value = 0.7;
+  n.connect(lp); lp.connect(env20(ctx, out, t, attacco, T20, picco)); n.start(t); n.stop(t + attacco + T20 * 3.5 + 0.1);
+}
+function banda20(ctx, out, t, freq, q, attacco, T20, picco) {   // rumore in una banda: il "metallo"
+  const n = ctx.createBufferSource(); n.buffer = rumore(ctx, 1);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+  n.connect(bp); bp.connect(env20(ctx, out, t, attacco, T20, picco)); n.start(t); n.stop(t + attacco + T20 * 3.5 + 0.05);
+}
+function nota(ctx, out, t, f, tipo, attacco, T20, picco, taglio, f0) {   // un'onda stabile, con filtro opzionale e (opzionale) piccola caduta iniziale
+  const o = ctx.createOscillator(); o.type = tipo; o.frequency.setValueAtTime(f0 || f, t);
+  if (f0) o.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+  let n = o;
+  if (taglio) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = taglio; lp.Q.value = 0.5; o.connect(lp); n = lp; }
+  n.connect(env20(ctx, out, t, attacco, T20, picco)); o.start(t); o.stop(t + attacco + T20 * 3.5 + 0.05);
+}
+function camera(ctx, out, durata, secco) {   // riverbero scuro di una grande stanza metallica: restituisce l'ingresso
+  const sr = ctx.sampleRate, n = Math.floor(sr * durata), b = ctx.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); let y = 0;
+    for (let i = 0; i < n; i++) { y += 0.10 * ((Math.random() * 2 - 1) - y); d[i] = y * Math.exp(-i / sr * 6.9 / durata) * 3.2; } }
+  const cv = ctx.createConvolver(); cv.buffer = b; const w = ctx.createGain(); w.gain.value = 0.9; cv.connect(w); w.connect(out);
+  const dry = ctx.createGain(); dry.gain.value = secco; dry.connect(out);
+  const inp = ctx.createGain(); inp.connect(cv); inp.connect(dry); return inp;
+}
+function modulato(ctx, out, t, durata, f) {          // un volume che segue una funzione del tempo (passi di 4 ms): serve per ronzii e sfarfallii
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  for (let tt = 0; tt < durata; tt += 0.004) g.gain.setValueAtTime(Math.max(0.0001, f(tt)), t + tt);
+  g.gain.setValueAtTime(0.0001, t + durata); g.connect(out); return g;
+}
+function rumoreFiltrato(ctx, dest, t, durata, tipo, freq, q) {
+  const n = ctx.createBufferSource(); n.buffer = rumore(ctx, Math.max(1, durata + 0.1));
+  const f = ctx.createBiquadFilter(); f.type = tipo; f.frequency.value = freq; f.Q.value = q; n.connect(f); f.connect(dest);
+  n.start(t); n.stop(t + durata + 0.05);
+}
+function cortocircuito(ctx, out0, t, k) {
+  const out = ctx.createGain(); out.gain.value = 0.6; out.connect(out0);
+  if (k === 1) {            // ARCO: uno schiocco e poi un arco che brucia, ronzio a 100 Hz con crepitio irregolare
+    banda20(ctx, out, t, 1800, 0.8, 0.0004, 0.03, 1.6);
+    massa20(ctx, out, t, 300, 0.001, 0.08, 0.40);
+    const g = modulato(ctx, out, t + 0.02, 0.6, tt => 0.38 * Math.exp(-tt * 3.5) * (0.35 + 0.65 * Math.abs(Math.sin(2 * Math.PI * 100 * tt))) * (0.6 + 0.4 * Math.random()));
+    rumoreFiltrato(ctx, g, t + 0.02, 0.6, 'bandpass', 2600, 0.8);
+  } else if (k === 2) {     // SCINTILLE: scoppi secchi e distanziati, sempre piu' radi, con un ronzio debole fra uno e l'altro
+    [0, 0.05, 0.14, 0.20, 0.33, 0.40, 0.62, 0.85].forEach((dt, j) => {
+      const w = 1 - j * 0.08;
+      rumoreFiltrato(ctx, env20(ctx, out, t + dt, 0.0004, 0.007, 1.5 * w), t + dt, 0.1, 'bandpass', 1300 + 700 * Math.random(), 0.7);
+      massa20(ctx, out, t + dt, 450, 0.001, 0.012, 0.35 * w); });
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 100;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1000; o.connect(lp);
+    lp.connect(modulato(ctx, out, t, 1.0, tt => (Math.random() < 0.5 ? 0.0001 : 0.07) * Math.exp(-tt * 2.5))); o.start(t); o.stop(t + 1.1);
+  } else if (k === 3) {     // TRASFORMATORE: un ronzio a 100 Hz che si carica e cresce, poi uno scoppio e l'energia che ricade con qualche crepitio
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 100;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.8;
+    lp.frequency.setValueAtTime(250, t); lp.frequency.linearRampToValueAtTime(1600, t + 0.38);
+    o.connect(lp); lp.connect(modulato(ctx, out, t, 0.40, tt => 0.5 * (tt / 0.38) ** 1.6)); o.start(t); o.stop(t + 0.5);
+    const tp = t + 0.39;
+    rumoreFiltrato(ctx, env20(ctx, out, tp, 0.0008, 0.05, 0.9), tp, 0.4, 'bandpass', 1300, 0.5);
+    massa20(ctx, out, tp, 200, 0.001, 0.12, 0.6);
+    [0.06, 0.13, 0.25].forEach((dt, j) => rumoreFiltrato(ctx, env20(ctx, out, tp + dt, 0.0004, 0.01, 0.8 / (1 + j)), tp + dt, 0.1, 'bandpass', 1700, 0.7));
+  } else if (k === 4) {     // IMPULSI: una serie di scariche regolari a circa 28 al secondo (come un elettrostimolatore), che si spegne
+    for (let j = 0; j < 12; j++) {
+      const tt = t + j * 0.036, w = 1 - j * 0.05;
+      rumoreFiltrato(ctx, env20(ctx, out, tt, 0.0005, 0.014, 1.6 * w), tt, 0.15, 'bandpass', 2200, 0.9);
+      massa20(ctx, out, tt, 500, 0.001, 0.02, 0.25 * w); }
+  } else {                  // ZAP: una scarica larga con un breve squillo luminoso, poi un ronzio che muore con lo sfarfallio
+    rumoreFiltrato(ctx, env20(ctx, out, t, 0.0005, 0.04, 1.3), t, 0.4, 'bandpass', 1700, 0.5);
+    banda20(ctx, out, t, 3000, 8, 0.0005, 0.05, 1.3);
+    massa20(ctx, out, t, 250, 0.001, 0.07, 0.5);
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 100;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; o.connect(lp);
+    lp.connect(modulato(ctx, out, t + 0.05, 0.45, tt => (Math.random() < 0.3 ? 0.0001 : 0.22) * Math.exp(-tt * 6) * (0.6 + 0.4 * Math.random()))); o.start(t + 0.05); o.stop(t + 0.55);
+  }
+}
+function suonoUrto(ctx, out0, t, i) {     // i: 0,2 = lieve, 0,55 = medio, 1 = forte. Lo stesso colpo di base che cresce
+  const forte = i >= 0.8, medio = i > 0.4 && !forte;
+  const out = ctx.createGain(); out.gain.value = 0.75; out.connect(out0);
+  // colpo di base (urto lieve): acciaio contro acciaio, tozzo e metallico, niente note intonate
+  nota(ctx, out, t, 42, 'sine', 0.003, 0.17, 0.33, 0, 78);
+  massa20(ctx, out, t, 240, 0.001, 0.09, 0.42);
+  [[250, 0.10, 1.0], [420, 0.08, 0.95], [640, 0.06, 0.85], [980, 0.04, 0.55]].forEach(([f, T, w]) => banda20(ctx, out, t, f, 5, 0.0005, T * 0.78, 2.4 * 0.52 * w));
+  if (medio || forte) {                                  // piu' peso e piu' corpo di lamiera, un po' piu' di morso
+    nota(ctx, out, t, 36, 'sine', 0.003, 0.30, 0.30, 0, 70);
+    massa20(ctx, out, t, 170, 0.001, 0.16, 0.35);
+    [[190, 0.12, 1.0], [320, 0.10, 0.8]].forEach(([f, T, w]) => banda20(ctx, out, t, f, 5, 0.0005, T, 2.4 * 0.40 * w));
+    banda20(ctx, out, t, 1500, 3, 0.0005, 0.03, 0.9);
+  }
+  if (medio) {                                           // MEDIO: in piu' lo schianto di un ceppo di legno che si spacca
+    banda20(ctx, out, t + 0.012, 1900, 1.0, 0.0004, 0.014, 1.0);                       // lo schiocco secco della fibra che cede
+    banda20(ctx, out, t + 0.012, 950, 1.5, 0.0004, 0.022, 1.0);
+    const n = ctx.createBufferSource(); n.buffer = rumore(ctx, 1);                    // la fenditura: un breve strappo di fibre
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(2300, t + 0.03); bp.frequency.exponentialRampToValueAtTime(800, t + 0.15);
+    n.connect(bp); bp.connect(env20(ctx, out, t + 0.03, 0.002, 0.045, 0.6)); n.start(t + 0.03); n.stop(t + 0.3);
+    [[380, 0.06, 1.0], [740, 0.045, 0.7]].forEach(([f, T, w]) => banda20(ctx, out, t + 0.04, f, 7, 0.0005, T, 1.5 * w));   // il corpo cavo del legno ("toc")
+    massa20(ctx, out, t + 0.04, 200, 0.002, 0.10, 0.35);
+  } else if (forte) {                                    // FORTE: l'urto medio (senza legno), poi circuiti che scoccano, bruciano e scintillano
+    const el = ctx.createGain(); el.gain.value = 0.5; el.connect(out0);
+    cortocircuito(ctx, el, t + 0.12, 5);                                                // zap
+    cortocircuito(ctx, el, t + 0.16, 1);                                                // arco
+    cortocircuito(ctx, el, t + 0.22, 2);                                                // scintille
+  }
+}
+function suonoDistruzione(ctx, out0, t) {   // un'esplosione tonda e drastica: un solo grande colpo pieno e profondo, che si spegne in un boato; pochissimi detriti, bassi
+  const out = ctx.createGain(); out.gain.value = 0.85; out.connect(out0);
+  const ws = ctx.createWaveShaper(), cv = new Float32Array(2048);                          // saturazione piu' leggera: pieno senza essere graffiante
+  for (let k = 0; k < 2048; k++) { const x = k / 1023.5 - 1; cv[k] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
+  ws.curve = cv; const pre = ctx.createGain(); pre.gain.value = 1.3; pre.connect(ws); ws.connect(out);
+  const scoppio_ = (tt, taglio, T, picco) => { const sc = ctx.createBufferSource(); sc.buffer = rumoreBruno(ctx, 3);
+    const l = ctx.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = taglio; l.Q.value = 0.5;
+    sc.connect(l); l.connect(env20(ctx, pre, tt, 0.002, T, picco)); sc.start(tt); sc.stop(tt + 2.8); };
+  scoppio_(t, 2600, 0.10, 0.9);                                                            // attacco: forte ma arrotondato (rumore scuro, taglio basso)
+  scoppio_(t, 700, 0.70, 1.1);                                                             // il corpo: pieno e piu' lungo
+  scoppio_(t, 300, 1.40, 0.8);                                                             // strato grave: ingrossa e prolunga il boato
+  nota(ctx, pre, t, 30, 'sine', 0.003, 1.6, 1.1, 0, 85);                                   // sub profondo e lungo: la rotondita'
+  nota(ctx, pre, t, 55, 'sine', 0.01, 0.8, 0.65, 0, 120);
+  massa20(ctx, pre, t, 260, 0.003, 0.90, 1.05);
+  massa20(ctx, pre, t, 110, 0.006, 1.9, 1.0);
+  [[0.38, 0.22], [0.70, 0.14], [1.10, 0.10], [1.60, 0.07], [2.10, 0.05]].forEach(([dt, w]) => massa20(ctx, pre, t + dt, 120, 0.004, 0.25, w));   // pochi tonfi sordi, radi, che si spengono
+}
+function suonoAllarme(ctx, out, t, tipo) {
+  if (tipo === 'integrita') for (let k = 0; k < 3; k++) {
+    tono(ctx, out, t + k * 0.42, 880, 880, 'square', 0.005, 0.16, 0.26);
+    tono(ctx, out, t + k * 0.42 + 0.2, 660, 660, 'square', 0.005, 0.16, 0.26);
+  } else for (let k = 0; k < 2; k++) tono(ctx, out, t + k * 0.55, 520, 440, 'triangle', 0.01, 0.35, 0.40);
+}
+function suonoRecord(ctx, out, t) {
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, k) => tono(ctx, out, t + k * 0.11, f, f, 'sine', 0.01, 0.35, 0.28));
+}
+function suonoMotore(ctx, out) {
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(out);
+  const n = ctx.createBufferSource(); n.buffer = rumore(ctx); n.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240; lp.Q.value = 0.8;
+  n.connect(lp); lp.connect(g);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 46;
+  const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 150;
+  const og = ctx.createGain(); og.gain.value = 0.22;           // la parte intonata (onda a 40-54 Hz) dimezzata: meno effetto 'bottiglia'
+  o.connect(lp2); lp2.connect(og); og.connect(g);
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 13;           // vibrazione dello scafo
+  const lg = ctx.createGain(); lg.gain.value = 0; lfo.connect(lg); lg.connect(g.gain);       // la vibrazione cresce con la spinta: a motore spento non c'e' nessun residuo
+  n.start(); o.start(); lfo.start();
+  return {
+    set(l) { const t = ctx.currentTime; g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(0.85 * l, t, l > 0 ? 0.07 : 0.18); lg.gain.setTargetAtTime(0.07 * l, t, 0.1);                // sale in fretta, scende piano
+      lp.frequency.setTargetAtTime(160 + 260 * l, t, 0.1); o.frequency.setTargetAtTime(40 + 14 * l, t, 0.12); },
+    stop() { const t = ctx.currentTime; g.gain.setTargetAtTime(0, t, 0.05); [n, o, lfo].forEach(x => x.stop(t + 0.5)); },
+  };
+}
+function suonoGetti(ctx, out, variante) {
+  // variante: 'originale' (secco, acuto) | 'morbido' | 'soffice' (il piu' morbido)
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(out);
+  const n = ctx.createBufferSource(); n.buffer = rumore(ctx); n.loop = true;
+  let picco = 0.32, attacco = 0.012, rilascio = 0.05, extra = [];
+  if (!variante || variante === 'originale') {
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.9;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1200;
+    n.connect(bp); bp.connect(hp); hp.connect(g);
+  } else if (variante === 'morbido') {                      // piu' grave, senza spigoli, attacco e rilascio piu' lenti
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.5;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.4;
+    n.connect(bp); bp.connect(lp); lp.connect(g);
+    picco = 0.42; attacco = 0.035; rilascio = 0.13;
+  } else {                                                   // 'soffice': un respiro di gas, quasi privo di alte frequenze
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.5;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 0.4;
+    const corpo = ctx.createOscillator(); corpo.type = 'sine'; corpo.frequency.value = 130;     // un po' di corpo
+    const cg = ctx.createGain(); cg.gain.value = 0; corpo.connect(cg); cg.connect(g); corpo.start(); extra.push(corpo);     // tono a 130 Hz tolto: suonava come un soffio in una bottiglia
+    n.connect(lp); lp.connect(bp); bp.connect(g);
+    picco = 0.62; attacco = 0.055; rilascio = 0.2;
+  }
+  n.start();
+  return {
+    set(l) { const t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(picco * l, t, l > 0 ? attacco : rilascio); },
+    stop() { const t = ctx.currentTime; g.gain.setTargetAtTime(0, t, 0.03); n.stop(t + 0.5); extra.forEach(x => x.stop(t + 0.5)); },
+  };
+}
+function suonoAggancio(ctx, out0, t, perfetto) {   // aggancio normale: Monolito + sfiato. Perfetto: inizio del Monolito, poi Accordo con lo sfiato sotto
+  const out = ctx.createGain(); out.connect(out0);
+  if (!perfetto) {
+    out.gain.value = 0.85;
+    nota(ctx, out, t, 46, 'sine', 0.004, 0.45, 0.8, 0, 78);
+    massa20(ctx, out, t, 140, 0.003, 0.30, 0.7);
+    nota(ctx, out, t, 55, 'sine', 0.12, 0.9, 0.25);
+    nota(ctx, out, t, 82.5, 'sine', 0.15, 0.8, 0.18);
+    nota(ctx, out, t, 110, 'triangle', 0.18, 0.7, 0.12, 400);
+    const ts = t + 0.60;                                  // lo sfiato entra quando il colpo e' quasi spento: due momenti distinti
+    const h = ctx.createBufferSource(); h.buffer = rumore(ctx, 2);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.6;
+    bp.frequency.setValueAtTime(1800, ts); bp.frequency.exponentialRampToValueAtTime(700, ts + 1.1);
+    h.connect(bp); bp.connect(env20(ctx, out, ts, 0.06, 0.55, 0.16)); h.start(ts); h.stop(ts + 2.0);
+  } else {
+    out.gain.value = 0.9;
+    nota(ctx, out, t, 46, 'sine', 0.004, 0.45, 0.8, 0, 78);
+    massa20(ctx, out, t, 140, 0.003, 0.30, 0.7);
+    const ta = t + 0.30;
+    const bus = ctx.createGain(); bus.connect(out);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.6; lp.connect(bus);
+    lp.frequency.setValueAtTime(300, ta); lp.frequency.linearRampToValueAtTime(750, ta + 0.3); lp.frequency.linearRampToValueAtTime(260, ta + 1.6);
+    [73.4, 110, 146.8, 220].forEach((f, i) => { [-4, 4].forEach(c => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = c; o.connect(env20(ctx, lp, ta, 0.30, 0.9, 0.18 / (1 + i * 0.35))); o.start(ta); o.stop(ta + 3.6); }); });
+    const ts = t + 0.60;                                  // lo sfiato di sempre, sotto l'Accordo
+    const h = ctx.createBufferSource(); h.buffer = rumore(ctx, 2);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.6;
+    bp.frequency.setValueAtTime(1800, ts); bp.frequency.exponentialRampToValueAtTime(700, ts + 1.1);
+    h.connect(bp); bp.connect(env20(ctx, out, ts, 0.06, 0.55, 0.16)); h.start(ts); h.stop(ts + 2.0);
+  }
+}
+
+// Sottofondo del gioco: il "rombo di scafo" (lo stesso suono che si sentiva sotto il menu, scelto dall'utente): rumore e onda a ~40 Hz, filtrati,
+// con il volume che pulsa a 13 Hz (vibrazione dello scafo). Solo durante il tentativo; il menu e' silenzioso.
+// set(tensione 0..1): con poca integrita' o poco carburante la vibrazione si intensifica, il rombo si schiarisce un po' e sale di livello.
+function suonoSottofondo(ctx, out) {
+  const base = 0.34;                                                             // stesso livello con cui si sentiva sotto il menu
+  const uscita = ctx.createGain(); uscita.gain.value = 0.0001; uscita.connect(out);
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(uscita);
+  const n = ctx.createBufferSource(); n.buffer = rumore(ctx); n.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160; lp.Q.value = 0.8; n.connect(lp); lp.connect(g);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 40;
+  const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 150; const og = ctx.createGain(); og.gain.value = 0.45;
+  o.connect(lp2); lp2.connect(og); og.connect(g);
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 13; const lg = ctx.createGain(); lg.gain.value = 0.07; lfo.connect(lg); lg.connect(g.gain);
+  n.start(); o.start(); lfo.start();
+  uscita.gain.setTargetAtTime(base, ctx.currentTime, 0.8);                      // entra piano
+  return {
+    set(t) { const k = ctx.currentTime; lp.frequency.setTargetAtTime(160 + 120 * t, k, 0.5); lg.gain.setTargetAtTime(0.07 * (1 + t), k, 0.5); uscita.gain.setTargetAtTime(base * (1 + 0.8 * t), k, 0.5); },
+    stop() { const k = ctx.currentTime; uscita.gain.setTargetAtTime(0, k, 0.3); [n, o, lfo].forEach(x => { try { x.stop(k + 1.5); } catch (e) {} }); },
+  };
+}
+const SND = { ctx: null, master: null, loopBus: null, motor: null, jets: null, amb: null, tens: -1 };
+function sndCatena(ctx) {                              // uscita: suoni -> (secco + armoniche dei bassi) -> compressore -> altoparlanti
+  const master = ctx.createGain(); master.gain.value = 1.4;
+  const loops = ctx.createGain(); loops.gain.value = 0.486; loops.connect(master);          // motore e getti: sotto agli altri suoni
+  const mix = ctx.createGain(); master.connect(mix);
+  // Gli altoparlanti dei portatili non riproducono sotto ~100 Hz: aggiungo le armoniche dei bassi (saturazione) cosi' il peso si sente lo stesso.
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 80; bp.Q.value = 0.6;
+  const ws = ctx.createWaveShaper(), cv = new Float32Array(2048); for (let k = 0; k < 2048; k++) cv[k] = Math.tanh(4 * (k / 1023.5 - 1)) / 4;
+  ws.curve = cv; const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 110; const eg = ctx.createGain(); eg.gain.value = 1.2;
+  master.connect(bp); bp.connect(ws); ws.connect(hp); hp.connect(eg); eg.connect(mix);
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -3; comp.knee.value = 3; comp.ratio.value = 8; comp.attack.value = 0.002; comp.release.value = 0.15;     // solo da limitatore: non amplifica i suoni piu' piani
+  mix.connect(comp); return { master, loops, uscita: comp };
+}
+function sndInit() {                                   // va chiamata da un gesto dell'utente (tasto): i browser non fanno partire l'audio prima
+  if (!SND.ctx) {
+    SND.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const c = sndCatena(SND.ctx); SND.master = c.master; SND.loopBus = c.loops; c.uscita.connect(SND.ctx.destination);
+  }
+  if (SND.ctx.state === 'suspended') SND.ctx.resume();
+}
+function sndStopLoops() {
+  if (SND.motor) { SND.motor.stop(); SND.motor = null; }
+  if (SND.jets) { SND.jets.stop(); SND.jets = null; }
+  if (SND.amb) { SND.amb.stop(); SND.amb = null; SND.tens = -1; }
+}
+function toggleSound() {
+  opts.sound = !opts.sound;
+  if (opts.sound) { sndInit(); suonoUrto(SND.ctx, SND.master, SND.ctx.currentTime + 0.02, 0.2); } else sndStopLoops();
+}
+function sndPlay(fn, ritardo, guadagno) {              // suono breve: funzione (ctx, uscita, istante); guadagno: ritocco di volume
+  if (!opts.sound || !SND.ctx) return;
+  try { let o = SND.master; if (guadagno) { o = SND.ctx.createGain(); o.gain.value = guadagno; o.connect(SND.master); }
+    fn(SND.ctx, o, SND.ctx.currentTime + 0.01 + (ritardo || 0)); } catch (e) { /* un errore audio non deve mai fermare il gioco */ }
+}
+function sndImpact(danno) {                            // gravita' dall'entita' del danno: lieve, medio, forte
+  const i = danno < 8 ? 0.2 : danno < 20 ? 0.55 : 1;
+  sndPlay((c, o, t) => suonoUrto(c, o, t, i), 0, 1.4);                  // un po' piu' forte: gli urti non devono perdersi sotto al motore
+}
+function sndUpdate() {                                 // ogni fotogramma: motore e getti seguono i propulsori accesi
+  if (!opts.sound || !SND.ctx) return;
+  try {
+    const f = S.fl, run = mode === 'run';
+    if (!SND.motor) SND.motor = suonoMotore(SND.ctx, SND.loopBus);
+    if (!SND.jets) { const jb = SND.ctx.createGain(); jb.gain.value = 1.02; jb.connect(SND.loopBus); SND.jets = suonoGetti(SND.ctx, jb, 'soffice'); }
+    if (run && !SND.amb) { SND.amb = suonoSottofondo(SND.ctx, SND.master); SND.tens = -1; }       // il sottofondo c'e' solo durante il tentativo
+    if (!run && SND.amb) { SND.amb.stop(); SND.amb = null; }
+    if (SND.amb) {                                                                              // tensione: poca integrita' o poco carburante
+      const ten = Math.max(clamp((100 - S.hull) / 70, 0, 1), clamp((0.4 - S.fuel / P.fuel) / 0.4, 0, 1));
+      if (Math.abs(ten - SND.tens) > 0.02) { SND.tens = ten; SND.amb.set(ten); }
+    }
+    SND.motor.set(run ? f.main : 0);
+    SND.jets.set(run ? Math.max(f.rev, f.latL, f.latR, f.rotL, f.rotR) : 0);
+  } catch (e) { /* idem */ }
+}
+
+// ---------------------------------------------------------------------------
 // Fisica
 // ---------------------------------------------------------------------------
 function damage(amount, why) {
@@ -284,6 +609,10 @@ function damage(amount, why) {
   S.hull -= amount; S.dmg += amount; S.flash = 1;
   banner = { text: `${why}  (-${Math.round(amount)}% integrità)`, t: 4, col: COL.bad };
   if (S.hull <= 0) finish('destroyed');
+  else {
+    sndImpact(amount);
+    if (S.hull <= 30 && !S.alarmHull) { S.alarmHull = true; sndPlay((c, o, t) => suonoAllarme(c, o, t, 'integrita'), 0.7); }
+  }
 }
 
 function step(dt) {
@@ -321,6 +650,7 @@ function step(dt) {
     if (down('KeyD', 'ArrowRight')) { tq -= P.torque * k; S.fuel -= P.useRot * k * dt; f.rotR = k; }
   }
   if (S.fuel < 0) S.fuel = 0;
+  if (S.fuel <= P.fuel * 0.2 && !S.alarmFuel) { S.alarmFuel = true; sndPlay((c, o, t) => suonoAllarme(c, o, t, 'carburante')); }
 
   if (tq === 0 && opts.assist && hasFuel) {      // assistente: mantiene l'assetto relativo alla stazione
     const diff = S.ws - S.w;
@@ -367,6 +697,7 @@ function collide() {
     if (vn < 0) {
       S.vx -= 1.3 * vn * nx; S.vy -= 1.3 * vn * ny;
       if (-vn > 0.4) S.hits++;
+      else if (-vn > 0.2) sndPlay((c, o, t) => suonoUrto(c, o, t, 0.2));        // sfioramento: nessun danno, solo un tocco
       damage(Math.max(0, -vn - 0.4) * 8, 'Urto con la stazione');
     }
   }
@@ -417,6 +748,10 @@ function finish(kind, perfect) {
   S.result.newRecord = nuovoRecord;
   S.result.recordPrima = recordGlobale;
   if (recordGlobale !== null && S.result.score > recordGlobale) recordGlobale = S.result.score;
+  if (kind === 'docked') {
+    sndPlay((c, o, t) => suonoAggancio(c, o, t, !!perfect), 0, 1.5);                  // piu' forte: e' il momento piu' importante
+    if (nuovoRecord) sndPlay((c, o, t) => suonoRecord(c, o, t), 2.4);
+  } else if (kind === 'destroyed') sndPlay((c, o, t) => suonoDistruzione(c, o, t));
   logRun(kind === 'docked' ? 'docked' : kind);
 }
 
@@ -532,7 +867,7 @@ function drawShip(showAim) {
   ctx.translate(sxp, syp); ctx.rotate(-S.th); ctx.scale(sc, sc);
   const f = S.fl;
   ctx.fillStyle = '#ffd08a';
-  if (f.main) { ctx.beginPath(); ctx.moveTo(-3, -1.2); ctx.lineTo(-3 - 4 * f.main - Math.random() * 1.5, 0); ctx.lineTo(-3, 1.2); ctx.fill(); }
+  if (f.main) { ctx.beginPath(); ctx.moveTo(-1.98, -0.8); ctx.lineTo(-1.98 - 4 * f.main - Math.random() * 1.5, 0); ctx.lineTo(-1.98, 0.8); ctx.fill(); }      // ugello del Mulo
   // Getti dei piccoli propulsori: stessa fiammella che sfarfalla del motore principale, ma piu' piccola e bianco-grigia.
   // Partono dal bordo dello scafo e escono nel verso OPPOSTO alla spinta.
   const jet = (x, y, dx, dy, k) => {
@@ -543,16 +878,30 @@ function drawShip(showAim) {
     ctx.fillStyle = 'rgba(255,255,255,0.95)';                                      // nucleo piu' chiaro
     ctx.beginPath(); ctx.moveTo(x + nx * w * 0.45, y + ny * w * 0.45); ctx.lineTo(x + dx * L * 0.6, y + dy * L * 0.6); ctx.lineTo(x - nx * w * 0.45, y - ny * w * 0.45); ctx.fill();
   };
-  if (f.rev) { jet(2.6, 0.64, 1, 0, f.rev); jet(2.6, -0.64, 1, 0, f.rev); }         // frenata: getti in avanti
-  if (f.latL) jet(0, 1.72, 0, 1, f.latL);                                            // Q spinge a sinistra: getto a destra
-  if (f.latR) jet(0, -1.72, 0, -1, f.latR);                                          // E spinge a destra: getto a sinistra
-  if (f.rotL) { jet(3, 0.43, 0, 1, f.rotL); jet(-3, -3, 0, -1, f.rotL); }           // A: il muso va a sinistra, la coda a destra
-  if (f.rotR) { jet(3, -0.43, 0, -1, f.rotR); jet(-3, 3, 0, 1, f.rotR); }           // D: il contrario
-  ctx.fillStyle = S.flash > 0 ? '#ff8a8a' : '#10202e';
-  ctx.strokeStyle = S.flash > 0 ? COL.bad : COL.ship; ctx.lineWidth = 1.2 / sc * Math.max(1, sc / 2);
-  ctx.beginPath();
-  ctx.moveTo(P.noseLen, 0); ctx.lineTo(-3, 3); ctx.lineTo(-1.8, 0); ctx.lineTo(-3, -3); ctx.closePath();
-  ctx.fill(); ctx.stroke();
+  // Posizioni dei piccoli ugelli del Mulo (4 agli angoli, 2 laterali vicino al baricentro); coordinate in metri, muso verso +x
+  if (f.rev) { jet(3.03, 1.24, 1, 0, f.rev); jet(3.03, -1.24, 1, 0, f.rev); }         // frenata: getti in avanti
+  if (f.latL) jet(0.75, 1.26, 0, 1, f.latL);                                         // Q spinge a sinistra: getto a destra
+  if (f.latR) jet(0.75, -1.26, 0, -1, f.latR);                                       // E spinge a destra: getto a sinistra
+  if (f.rotL) { jet(3.03, 1.24, 0, 1, f.rotL); jet(-1.07, -1.24, 0, -1, f.rotL); }   // A: il muso va a sinistra, la coda a destra
+  if (f.rotR) { jet(3.03, -1.24, 0, -1, f.rotR); jet(-1.07, 1.24, 0, 1, f.rotR); }   // D: il contrario
+  // Il Mulo (6 x 3 m): disegno da docs/flotta-astronavi.svg, spostato in avanti perche' la sonda tocchi il portello a P.noseLen.
+  // Solo aspetto: fisica, collisione (cerchio) e punto di contatto restano quelli di prima.
+  const flash = S.flash > 0, lw = Math.min(2.2, Math.max(1.2, sc * 0.1)) / sc;      // contorno sottile: 1,2-2,2 pixel a qualsiasi zoom
+  ctx.translate(P.noseLen - 2.925, 0); ctx.scale(0.65, 0.95);
+  const fill = flash ? '#ff8a8a' : '#10202e', edge = flash ? COL.bad : COL.ship, li = lw / 0.8;
+  const forma = (fillC, strokeC, w, dis) => { ctx.fillStyle = fillC; ctx.strokeStyle = strokeC; ctx.lineWidth = w; ctx.beginPath(); dis(); ctx.fill(); ctx.stroke(); };
+  forma('#0b1722', '#4f7e9c', li * 0.7, () => { ctx.rect(-2.9, 1.45, 3.3, 0.16); ctx.rect(-2.9, -1.61, 3.3, 0.16); });          // pannelli radiatori
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = li * 0.6; ctx.beginPath();
+  for (const x of [-2.5, -1.0, 0.2]) { ctx.moveTo(x, 1.15); ctx.lineTo(x, 1.45); ctx.moveTo(x, -1.15); ctx.lineTo(x, -1.45); } ctx.stroke();   // tiranti
+  forma(fill, edge, li, () => { ctx.moveTo(-3.65, -0.55); ctx.lineTo(-4.7, -0.95); ctx.lineTo(-4.7, 0.95); ctx.lineTo(-3.65, 0.55); ctx.closePath(); });   // campana del motore
+  forma(fill, edge, li, () => { ctx.moveTo(3.0, -1.15); ctx.lineTo(-3.0, -1.15); ctx.quadraticCurveTo(-3.7, -1.15, -3.7, -0.7); ctx.lineTo(-3.7, 0.7);
+    ctx.quadraticCurveTo(-3.7, 1.15, -3.0, 1.15); ctx.lineTo(3.0, 1.15); ctx.quadraticCurveTo(3.3, 1.15, 3.3, 0.85); ctx.lineTo(3.3, -0.85);
+    ctx.quadraticCurveTo(3.3, -1.15, 3.0, -1.15); ctx.closePath(); });                                                                               // scafo
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = li * 0.6; ctx.beginPath();
+  for (const x of [-2.6, -1.2, 0.3, 1.6]) { ctx.moveTo(x, -1.15); ctx.lineTo(x, 1.15); } ctx.stroke();                                                  // giunti dei pannelli
+  ctx.fillStyle = COL.ship; for (const y of [-0.75, -0.14, 0.47]) ctx.fillRect(2.05, y, 0.35, 0.28);                                                     // oblo'
+  forma(fill, edge, li, () => { ctx.rect(3.3, -0.75, 0.3, 1.5); });                                                                                      // anello di aggancio
+  forma(fill, edge, li, () => { ctx.moveTo(3.6, -0.3); ctx.lineTo(4.2, -0.2); ctx.lineTo(4.5, -0.2); ctx.lineTo(4.5, 0.2); ctx.lineTo(4.2, 0.2); ctx.lineTo(3.6, 0.3); ctx.closePath(); });   // sonda
   ctx.restore();
 }
 
@@ -616,7 +965,7 @@ function drawHud() {
 
   fitText(`stabilizzatore ${opts.assist ? 'SI' : 'no'}  |  laterali ${opts.lateral ? 'SI' : 'no'}`, x, H - 142, w, COL.dim, 11);
   fitText(`stazione ${SPIN_NAMES[opts.spin]}  |  aiuti ${AIDS_NAMES[aids]}`, x, H - 126, w, COL.dim, 11);
-  const help = ['↑ ↓ ← → (o WASD)  spinta e rotazione', opts.lateral ? 'Q / E  spinta laterale' : '', 'SHIFT + tasto  correzioni fini (30%)', 'P aiuti   INVIO riprova', 'M menu   H guida'];
+  const help = ['↑ ↓ ← → (o WASD)  spinta e rotazione', opts.lateral ? 'Q / E  spinta laterale' : '', 'SHIFT + tasto  correzioni fini (30%)', 'P aiuti   N suoni   INVIO riprova', 'M menu   H guida'];
   help.forEach((h, i) => fitText(h, x, H - 100 + i * 17, w, COL.dim, 12));
 }
 
@@ -778,12 +1127,14 @@ function drawOverlays() {
       ['  P                        cambia gli aiuti visivi', T_],
       ['  INVIO                    ricomincia il tentativo', T_],
       ['  M                        torna al menu', T_],
+      ['  N                        suoni si / no', T_],
       ['', T_],
       ['OPZIONI  seleziona il numero per cambiarle', O_],
       [null, null, { opt: { n: '1', label: 'Ferma automaticamente la rotazione della nave', values: ['si', 'no'], sel: opts.assist ? 0 : 1 } }],
       [null, null, { opt: { n: '2', label: 'Propulsori laterali (Q / E)', values: ['si', 'no'], sel: opts.lateral ? 0 : 1 } }],
       [null, null, { opt: { n: '3', label: 'Rotazione stazione', values: SPIN_NAMES, sel: opts.spin } }],
       [null, null, { opt: { n: '4', label: 'Aiuti visivi', values: AIDS_NAMES, sel: aids } }],
+      [null, null, { opt: { n: '5', label: 'Suoni (N anche in gioco)', values: ['si', 'no'], sel: opts.sound ? 0 : 1 } }],
       ['', T_],
       ['H  guida in 5 pagine (comandi, SHIFT, stabilizzatore, aiuti)', B_],
       ...(LOG_ON ? [['Test: raccoglie dati anonimi di gioco, nessun dato personale.', D_]]
@@ -881,6 +1232,7 @@ function frame(now) {
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   if (logNote.t > 0) logNote.t -= dt;
   updateCam(dt, false);
+  sndUpdate();
   render();
   requestAnimationFrame(frame);
 }
