@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space Trucker - Prototipo docking v0.3.2</title>
+<title>Space Trucker - Prototipo docking</title>
 <style>
   html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
@@ -37,10 +37,10 @@ resize();
 // Parametri di gioco (unita': metri, secondi, radianti)
 // ---------------------------------------------------------------------------
 const P = {
-  shipR: 3.5, noseLen: 4,
   main: 2.0, reverse: 1.0, lateral: 0.7,       // accelerazioni (m/s^2)
   torque: 0.9, wMax: 1.2, assistTorque: 0.7,   // rotazione (rad/s^2, rad/s)
   fine: 0.3,                                   // fattore con SHIFT (controllo fine)
+  pannelloDopo: 3.4,                           // secondi fra l'aggancio e la comparsa del pannello dei risultati (assestamento + finestrini che si accendono)
   fuel: 60, useMain: 0.5, useRev: 0.3, useLat: 0.25, useRot: 0.12,
   hubR: 16, boomR: 44,                         // geometria stazione
   maxClose: 1.2, maxLat: 0.8, maxAng: 12, maxRot: 0.12,  // tolleranze di aggancio
@@ -52,7 +52,14 @@ const P = {
   engPpm: 30, engIdle: 40, engActive: 0.4,       // 30 pressioni/min = 100; 40 s senza input = 0; 40% del tempo con un tasto premuto = 100
   perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.3.3';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.4.0';                         // da aggiornare a ogni build condivisa
+// Stazione SNODO: due porti, uno per braccio, speculari (come docs/stazione-snodo.svg). Il porto e' un OGGETTO con un tipo di portello:
+//  imbuto  = bocca di 6 m (mezza 3,0) che si stringe: agganci facili
+//  collare = foro di 3,4 m (mezza 1,7) con un labbro in fuori: agganci precisi
+// 'mezza' = mezza larghezza della bocca a livello del piano del porto; l'anello della nave deve passarci (mezza - anelloMezzo).
+const PORTE = [{ id: 'A', ang: 0, tipo: 'imbuto' }, { id: 'B', ang: Math.PI, tipo: 'collare' }];
+const TIPI_PORTO = { imbuto: { mezza: 3.0 }, collare: { mezza: 1.7 } };
+const STAZIONE = 'snodo';
 const SPINS = [0, 0.02, 0.04, 0.06];           // rad/s della stazione
 const SPIN_NAMES = ['ferma', 'piano', 'medio', 'veloce'];
 const opts = { assist: true, lateral: true, spin: 0, sound: true };      // sound: acceso di default (parte al primo tasto premuto: i browser non permettono prima)
@@ -128,6 +135,7 @@ function logRun(result) {
     dmg: Math.round(S.dmg), bounces: S.bounces, hits: S.hits,
     score: S.result ? S.result.score : 0,
     assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin], sound: sino(opts.sound),
+    station: STAZIONE, port: PORTE[S.dock ? S.dock.i : S.pt].id, portType: PORTE[S.dock ? S.dock.i : S.pt].tipo,
     presses: S.presses, active: Math.round(100 * S.active / Math.max(S.t, 0.1)),
     idleMax: Math.round(Math.max(S.maxIdle, S.idle) * 10) / 10,
     firstInput: Math.round((S.firstInput === null ? S.t : S.firstInput) * 10) / 10,
@@ -172,7 +180,7 @@ function newRun() {
     th: Math.random() * Math.PI * 2, w: (Math.random() - 0.5) * 0.2,
     fuel: P.fuel, hull: 100, dmg: 0, prevA: 1, flash: 0, bounces: 0, hits: 0, logged: false,
     presses: 0, active: 0, idle: 0, maxIdle: 0, firstInput: null,
-    contact: null, dock: null,
+    contact: null, dock: null, pt: 0,
     failClose: 0, failLat: 0, failAng: 0, failRot: 0, aidTime: [0, 0, 0], aidSwitches: 0,
     fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
     alarmHull: false, alarmFuel: false,
@@ -182,35 +190,142 @@ function newRun() {
   updateCam(0, true);
 }
 
+
+// ---------------------------------------------------------------------------
+// GEOMETRIA UNICA. Ogni elemento e' definito UNA volta come insieme di forme in metri; lo stesso insieme serve a disegnare
+// e a calcolare le collisioni (volume nel codice = volume disegnato). Regole in docs/piano-geometria-destriero-snodo.md.
+//  nave: poligoni CONVESSI in coordinate locali, x verso il muso e y verso destra, origine nel baricentro.
+// ---------------------------------------------------------------------------
+const esc = (pts, sx, sy) => pts.map(([x, y]) => [x * sx, y * sy]);
+const MULO = (() => {                                  // 6 x 3 m. Misure dal disegno docs/flotta-astronavi.svg (scala 0,65 x 0,95)
+  const k = pts => esc(pts, 0.65, 0.95);
+  return {
+    nome: 'Mulo',
+    parti: [                                           // nell'ordine di disegno
+      { stile: 'pannello', pts: k([[-2.9, 1.45], [0.4, 1.45], [0.4, 1.61], [-2.9, 1.61]]) },
+      { stile: 'pannello', pts: k([[-2.9, -1.61], [0.4, -1.61], [0.4, -1.45], [-2.9, -1.45]]) },
+      { stile: 'scafo', pts: k([[-3.65, -0.55], [-4.7, -0.95], [-4.7, 0.95], [-3.65, 0.55]]) },                        // campana del motore
+      { stile: 'scafo', pts: k([[3.0, -1.15], [-3.0, -1.15], [-3.5, -1.1], [-3.7, -0.7], [-3.7, 0.7], [-3.5, 1.1],
+                                [-3.0, 1.15], [3.0, 1.15], [3.2, 1.1], [3.3, 0.85], [3.3, -0.85], [3.2, -1.1]]) },       // scafo con angoli arrotondati
+      { stile: 'scafo', pts: k([[3.3, -0.75], [3.6, -0.75], [3.6, 0.75], [3.3, 0.75]]) },                              // anello di aggancio
+      { stile: 'scafo', pts: k([[3.6, -0.3], [4.5, -0.2], [4.5, 0.2], [3.6, 0.3]]) },                                  // sonda
+    ],
+    punta: 4.5 * 0.65,                                 // punta della sonda: il punto che deve attraversare il piano del porto
+    anelloMezzo: 0.75 * 0.95,                          // mezza larghezza dell'anello: deve passare nella finestra
+    ugelli: { main: [-3.055, 0], front: 1.95, rear: -2.145, fy: 1.235, lat: -0.325, ly: 1.264 },   // posizioni degli ugelli (m)
+  };
+})();
+const SHIP = MULO;
+
+// Nave nel mondo: ogni parte come poligono in coordinate di mondo (y del mondo verso l'alto).
+function shipWorld() {
+  const hx = Math.cos(S.th), hy = Math.sin(S.th), rx = Math.sin(S.th), ry = -Math.cos(S.th);     // avanti e destra
+  return SHIP.parti.map(p => p.pts.map(([x, y]) => [S.x + x * hx + y * rx, S.y + x * hy + y * ry]));
+}
+
+// Stazione: forme in coordinate di mondo, a un dato istante (ruota intorno all'origine).
+function barra(ax, ay, bx, by, hw) {                  // rettangolo da (a) a (b), larghezza totale 2*hw, estremi piatti
+  const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1, nx = -dy / l * hw, ny = dx / l * hw;
+  return [[ax + nx, ay + ny], [bx + nx, by + ny], [bx - nx, by - ny], [ax - nx, ay - ny]];
+}
+// Segmenti dell'anello luminoso di un porto (coordinate di mondo): lungo i bordi interni della bocca, sulla sagoma reale delle ali.
+function segmentiAnello(p, tipo) {
+  const pt = (s, l, d) => [p.px + p.tx * l * s + p.nx * d, p.py + p.ty * l * s + p.ny * d];     // d > 0 verso la nave, d < 0 verso la stazione
+  const out = [];
+  for (const s of [-1, 1]) {
+    if (tipo === 'imbuto') out.push([pt(s, 3.0, 0), pt(s, 1.5, -2)]);                                  // bordo obliquo dell'imbuto
+    else { out.push([pt(s, 1.7, 1.2), pt(s, 1.7, -2)]); out.push([pt(s, 1.7, 1.2), pt(s, 2.0, 1.2)]); }   // parete interna del collare e punta del labbro
+  }
+  return out;
+}
+function distPuntoSegmento(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+function ottagono(u0, u1, hw, c) {                    // modulo con angoli smussati (convesso); u = distanza lungo il braccio, v = di lato
+  return [[u0 + c, -hw], [u1 - c, -hw], [u1, -hw + c], [u1, hw - c], [u1 - c, hw], [u0 + c, hw], [u0, hw - c], [u0, -hw + c]];
+}
+// Braccio (stile "modulare"): dal mozzo alla piastra del porto, in metri lungo l'asse del braccio. 'k' dice il materiale/ruolo.
+const BRACCIO = [
+  { k: 'modulo', u0: 14, u1: 21, hw: 2.3 }, { k: 'tubo', u0: 21, u1: 24, hw: 1.2 },
+  { k: 'modulo', u0: 24, u1: 32, hw: 2.0 }, { k: 'tubo', u0: 32, u1: 36, hw: 1.2 },
+  { k: 'testata', u0: 36, u1: 42, hw: 3.0 },
+];
+function stationShapes(clock) {
+  const polys = [], cerchi = [{ k: 'mozzo', x: 0, y: 0, r: P.hubR }];
+  PORTE.forEach((porta, i) => {
+    const p = portAt(clock, i);
+    const W = (u, v) => [p.nx * u + p.tx * v, p.ny * u + p.ty * v];                 // (u lungo il braccio, v di lato) -> mondo; il piano del porto e' u = 44
+    for (const s of BRACCIO) {
+      const pts = (s.k === 'tubo' ? [[s.u0, -s.hw], [s.u1, -s.hw], [s.u1, s.hw], [s.u0, s.hw]] : ottagono(s.u0, s.u1, s.hw, 0.6)).map(([u, v]) => W(u, v));
+      polys.push({ k: s.k, i, hw: s.hw, u0: s.u0, u1: s.u1, pts });
+    }
+    for (const sg of [-1, 1]) {                        // ali della piastra, ANCORATE alla testata: la finestra si apre sulla faccia della testata
+      if (porta.tipo === 'imbuto') {                   // cuneo (bocca 6 m -> gola 3 m) + blocco di fondo
+        polys.push({ k: 'ala', i, pts: [W(44, sg * 3), W(44, sg * 12), W(42, sg * 12), W(42, sg * 1.5)] });
+        polys.push({ k: 'ala', i, pts: [W(42, sg * 1.5), W(42, sg * 12), W(40.5, sg * 12), W(40.5, sg * 1.5)] });
+      } else {                                         // collare: foro 3,4 m, ala spessa 3,5 m e labbro in fuori di 1,2 m
+        polys.push({ k: 'ala', i, pts: [W(44, sg * 1.7), W(44, sg * 12), W(40.5, sg * 12), W(40.5, sg * 1.7)] });
+        polys.push({ k: 'ala', i, pts: [W(44, sg * 1.7), W(44, sg * 2.0), W(45.2, sg * 2.0), W(45.2, sg * 1.7)] });
+      }
+    }
+  });
+  return { p: portAt(clock), polys, cerchi };
+}
+
+// ---- collisioni: asse di separazione (SAT) fra poligoni convessi, e fra poligono e cerchio ----
+function proietta(pts, ax, ay) { let mn = Infinity, mx = -Infinity; for (const [x, y] of pts) { const d = x * ax + y * ay; if (d < mn) mn = d; if (d > mx) mx = d; } return [mn, mx]; }
+function centroide(pts) { let x = 0, y = 0; for (const q of pts) { x += q[0]; y += q[1]; } return [x / pts.length, y / pts.length]; }
+function satPolyPoly(A, B) {                          // null se non si toccano; altrimenti { d: penetrazione, nx, ny: normale da B verso A }
+  let best = Infinity, bx = 0, by = 0;
+  for (const Pg of [A, B]) for (let i = 0; i < Pg.length; i++) {
+    const [x1, y1] = Pg[i], [x2, y2] = Pg[(i + 1) % Pg.length];
+    let ax = y2 - y1, ay = -(x2 - x1); const l = Math.hypot(ax, ay) || 1; ax /= l; ay /= l;
+    const [a0, a1] = proietta(A, ax, ay), [b0, b1] = proietta(B, ax, ay), o = Math.min(a1, b1) - Math.max(a0, b0);
+    if (o <= 0) return null;
+    if (o < best) { best = o; bx = ax; by = ay; }
+  }
+  const ca = centroide(A), cb = centroide(B);
+  if ((ca[0] - cb[0]) * bx + (ca[1] - cb[1]) * by < 0) { bx = -bx; by = -by; }
+  return { d: best, nx: bx, ny: by };
+}
+function satPolyCirc(A, cx, cy, r) {                  // normale dal cerchio verso il poligono
+  let best = Infinity, bx = 0, by = 0, near = null, nd = Infinity;
+  const prova = (ax, ay) => {
+    const l = Math.hypot(ax, ay) || 1; ax /= l; ay /= l;
+    const [a0, a1] = proietta(A, ax, ay), c = cx * ax + cy * ay, o = Math.min(a1, c + r) - Math.max(a0, c - r);
+    if (o <= 0) return false;
+    if (o < best) { best = o; bx = ax; by = ay; }
+    return true;
+  };
+  for (let i = 0; i < A.length; i++) {
+    const [x1, y1] = A[i], [x2, y2] = A[(i + 1) % A.length];
+    if (!prova(y2 - y1, -(x2 - x1))) return null;
+    const d = Math.hypot(x1 - cx, y1 - cy); if (d < nd) { nd = d; near = A[i]; }
+  }
+  if (!prova(near[0] - cx, near[1] - cy)) return null;
+  const ca = centroide(A);
+  if ((ca[0] - cx) * bx + (ca[1] - cy) * by < 0) { bx = -bx; by = -by; }
+  return { d: best, nx: bx, ny: by };
+}
+
 // ---------------------------------------------------------------------------
 // Stazione: geometria e porto di attracco (ruotano con la stazione)
 // ---------------------------------------------------------------------------
-function portAt(tc) {
-  const psi = S.psi0 + S.ws * tc;
+function portAt(tc, i) {                              // i: indice del porto; se omesso, il porto bersaglio (S.pt)
+  const k = i === undefined ? S.pt : i;
+  const psi = S.psi0 + S.ws * tc + PORTE[k].ang;
   const nx = Math.cos(psi), ny = Math.sin(psi);
   const px = nx * P.boomR, py = ny * P.boomR;
-  return { psi, nx, ny, tx: -ny, ty: nx, px, py, vx: -S.ws * py, vy: S.ws * px };
+  return { i: k, tipo: PORTE[k].tipo, mezza: TIPI_PORTO[PORTE[k].tipo].mezza, psi, nx, ny, tx: -ny, ty: nx, px, py, vx: -S.ws * py, vy: S.ws * px };
 }
-
-function solids() {
-  const p = portAt(S.clock);
-  const q = S.psi0 + Math.PI + S.ws * S.clock;
-  const ex = Math.cos(q) * 34, ey = Math.sin(q) * 34;
-  const cx = p.px - p.nx, cy = p.py - p.ny;     // piastra di attracco (spessore 2 m)
-  return [
-    { type: 'c', x: 0, y: 0, r: P.hubR },
-    { type: 's', ax: 0, ay: 0, bx: p.px - 2 * p.nx, by: p.py - 2 * p.ny, r: 1.5 },
-    { type: 's', ax: cx + p.tx * 3, ay: cy + p.ty * 3, bx: cx + p.tx * 12, by: cy + p.ty * 12, r: 1 },
-    { type: 's', ax: cx - p.tx * 3, ay: cy - p.ty * 3, bx: cx - p.tx * 12, by: cy - p.ty * 12, r: 1 },
-    { type: 's', ax: 0, ay: 0, bx: ex, by: ey, r: 1.5 },
-    { type: 'c', x: ex, y: ey, r: 6 },
-  ];
-}
-
-function closestOnSeg(o, x, y) {
-  const dx = o.bx - o.ax, dy = o.by - o.ay;
-  const t = clamp(((x - o.ax) * dx + (y - o.ay) * dy) / (dx * dx + dy * dy), 0, 1);
-  return [o.ax + dx * t, o.ay + dy * t];
+// Il bersaglio (telemetria, guida, zoom) e' il porto piu' vicino alla punta della nave; un po' di isteresi evita scatti quando sono equidistanti.
+function aggiornaBersaglio() {
+  if (S.dock) return;
+  const tx = S.x + Math.cos(S.th) * SHIP.punta, ty = S.y + Math.sin(S.th) * SHIP.punta;
+  const dist = i => { const p = portAt(S.clock, i); return Math.hypot(tx - p.px, ty - p.py); };
+  const cur = dist(S.pt);
+  for (let i = 0; i < PORTE.length; i++) if (i !== S.pt && dist(i) < cur * 0.85) { S.pt = i; break; }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +334,7 @@ function closestOnSeg(o, x, y) {
 function telemetry() {
   const p = portAt(S.clock);
   const hx = Math.cos(S.th), hy = Math.sin(S.th);
-  const nx = S.x + hx * P.noseLen, ny = S.y + hy * P.noseLen;
+  const nx = S.x + hx * SHIP.punta, ny = S.y + hy * SHIP.punta;
   const dx = nx - p.px, dy = ny - p.py;
   const rvx = S.vx - p.vx, rvy = S.vy - p.vy;
   const closing = -(rvx * p.nx + rvy * p.ny);
@@ -241,6 +356,7 @@ addEventListener('keydown', e => {
   if (opts.sound && !SND.ctx) sndInit();                                       // il primo tasto premuto e' il gesto che permette all'audio di partire
   if (mode === 'run' && !e.repeat && CONTROLS.includes(e.code)) S.presses++;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyC' && !e.repeat) debugColl = !debugColl;                  // contorni di collisione (strumento di sviluppo)
   if (e.code === 'KeyN' && !e.repeat && mode !== 'help') {                 // suoni si/no, in qualsiasi momento
     toggleSound();
     banner = { text: 'suoni: ' + (opts.sound ? 'si' : 'no'), t: 2, col: COL.ship };
@@ -622,6 +738,7 @@ function step(dt) {
   if (mode !== 'run') return;
   S.t += dt;
   S.aidTime[aids] += dt;
+  aggiornaBersaglio();
 
   const k = down('ShiftLeft', 'ShiftRight') ? P.fine : 1;
   const hx = Math.cos(S.th), hy = Math.sin(S.th);
@@ -674,9 +791,9 @@ function step(dt) {
 // Dopo l'aggancio la nave diventa solidale con la stazione: in circa un secondo si porta con delicatezza
 // nella posizione ideale (perpendicolare al portellone, muso inserito di 0,8 m) e poi ne segue il moto.
 function settleDock() {
-  const d = S.dock, p = portAt(S.clock);
+  const d = S.dock, p = portAt(S.clock, d.i);
   const k = clamp((S.clock - d.t0) / 1.4, 0, 1), e = k * k * (3 - 2 * k);       // andamento dolce
-  const a = d.a + (P.noseLen - 0.8 - d.a) * e;
+  const a = d.a + (SHIP.punta - 0.8 - d.a) * e;
   const l = d.l * (1 - e);
   S.x = p.px + p.nx * a + p.tx * l; S.y = p.py + p.ny * a + p.ty * l;
   S.th = p.psi + Math.PI + d.e * (1 - e);
@@ -685,42 +802,51 @@ function settleDock() {
 }
 
 function collide() {
-  for (const o of solids()) {
-    const [cx, cy] = o.type === 'c' ? [o.x, o.y] : closestOnSeg(o, S.x, S.y);
-    const dx = S.x - cx, dy = S.y - cy;
-    const d = Math.hypot(dx, dy) || 1e-6, min = P.shipR + o.r;
-    if (d >= min) continue;
-    const nx = dx / d, ny = dy / d;
-    S.x += nx * (min - d); S.y += ny * (min - d);
-    const qx = cx + nx * o.r, qy = cy + ny * o.r;            // punto di contatto
-    const vn = (S.vx + S.ws * qy) * nx + (S.vy - S.ws * qx) * ny;
+  const st = stationShapes(S.clock);
+  const risolvi = (c, parte) => {                    // c: { d, nx, ny } con la normale dalla stazione verso la nave
+    S.x += c.nx * c.d; S.y += c.ny * c.d;
+    let q = parte[0], m = Infinity;                  // punto di contatto: il vertice della nave piu' dentro l'ostacolo
+    for (const v of parte) { const dd = (v[0] + c.nx * c.d) * c.nx + (v[1] + c.ny * c.d) * c.ny; if (dd < m) { m = dd; q = v; } }
+    const qx = q[0] + c.nx * c.d, qy = q[1] + c.ny * c.d;
+    const vn = (S.vx + S.ws * qy) * c.nx + (S.vy - S.ws * qx) * c.ny;           // velocita' relativa alla stazione, lungo la normale
     if (vn < 0) {
-      S.vx -= 1.3 * vn * nx; S.vy -= 1.3 * vn * ny;
+      S.vx -= 1.3 * vn * c.nx; S.vy -= 1.3 * vn * c.ny;
       if (-vn > 0.4) S.hits++;
-      else if (-vn > 0.2) sndPlay((c, o, t) => suonoUrto(c, o, t, 0.2));        // sfioramento: nessun danno, solo un tocco
+      else if (-vn > 0.2) sndPlay((cx, o, t) => suonoUrto(cx, o, t, 0.2));        // sfioramento: nessun danno, solo un tocco
       damage(Math.max(0, -vn - 0.4) * 8, 'Urto con la stazione');
+    }
+  };
+  for (const o of st.polys.concat(st.cerchi)) {
+    if (mode !== 'run') return;
+    const parti = shipWorld();
+    for (const parte of parti) {
+      const c = o.pts ? satPolyPoly(parte, o.pts) : satPolyCirc(parte, o.x, o.y, o.r);
+      if (c) { risolvi(c, parte); break; }           // dopo uno spostamento le altre parti si ricalcolano nel giro successivo
     }
   }
 }
 
 function checkDock() {
   const T = telemetry();
-  if (S.prevA > 0 && T.a <= 0 && Math.abs(T.l) < 3) {
+  if (S.prevA > 0 && T.a <= 0 && Math.abs(T.l) < T.p.mezza) {                          // la punta attraversa il piano del porto, dentro la bocca
     const m = [T.closing / P.maxClose, T.lat / P.maxLat, Math.abs(T.err) / P.maxAng, Math.abs(T.rot) / P.maxRot];
     S.contact = { v: [T.closing, T.lat, Math.abs(T.err), Math.abs(T.rot)], m };      // valori al contatto e rapporto col limite
-    if (m.every(v => v <= 1)) {
-      S.dock = { t0: S.clock, a: (S.x - T.p.px) * T.p.nx + (S.y - T.p.py) * T.p.ny, l: (S.x - T.p.px) * T.p.tx + (S.y - T.p.py) * T.p.ty,
+    const limL = T.p.mezza - SHIP.anelloMezzo, fuori = Math.abs(T.l) > limL;            // l'anello, non solo la punta, deve passare nella finestra
+    if (m.every(v => v <= 1) && !fuori) {
+      S.pt = T.p.i;
+      S.dock = { i: T.p.i, t0: S.clock, a: (S.x - T.p.px) * T.p.nx + (S.y - T.p.py) * T.p.ny, l: (S.x - T.p.px) * T.p.tx + (S.y - T.p.py) * T.p.ty,
                  e: angDiff(S.th, T.p.psi + Math.PI) };       // posizione e angolo nel sistema del portellone
       finish('docked', m.every(v => v <= P.perfectFrac));
       return;
     }
     const names = ['velocità di avvicinamento', 'scivolamento', 'allineamento', 'rotazione'];
     const bad = names.filter((_, i) => m[i] > 1);
+    if (fuori) bad.push('centratura (anello fuori dalla finestra)');
     if (m[0] > 1) S.failClose++;
     if (m[1] > 1) S.failLat++;
     if (m[2] > 1) S.failAng++;
     if (m[3] > 1) S.failRot++;
-    const excess = m.reduce((s, v) => s + Math.max(0, v - 1), 0);
+    const excess = m.reduce((s, v) => s + Math.max(0, v - 1), 0) + (fuori ? Math.abs(T.l) / limL - 1 : 0);
     const p = T.p;
     S.vx = p.vx + p.nx * (0.5 + 0.3 * Math.max(0, T.closing));
     S.vy = p.vy + p.ny * (0.5 + 0.3 * Math.max(0, T.closing));
@@ -763,7 +889,7 @@ function updateCam(dt, snap) {
   const mx = (S.x + p.px) / 2, my = (S.y + p.py) / 2;
   const dist = Math.hypot(S.x - p.px, S.y - p.py);
   const half = Math.max(28, dist * 0.6 + 14);
-  const target = 0.5 * Math.min(W - PANEL, H) / half;
+  const target = Math.max(0.2, 0.5 * Math.min(W - PANEL, H) / half);      // mai negativo, anche con finestre molto strette
   if (snap) { cam.x = mx; cam.y = my; cam.s = target; return; }
   const f = 1 - Math.exp(-dt * 3);
   cam.x += (mx - cam.x) * f; cam.y += (my - cam.y) * f;
@@ -804,28 +930,138 @@ function drawStars() {
   ctx.globalAlpha = 1;
 }
 
+// Luci di segnalazione: sprite dell'alone (disegnato una volta) e indice degli spigoli esterni (calcolato una volta, la geometria e' rigida)
+const luceSprite = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(127,231,255,1)'); gr.addColorStop(0.35, 'rgba(127,231,255,0.35)'); gr.addColorStop(1, 'rgba(127,231,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return c; })();
+const haloCv = document.createElement('canvas'), hctx = haloCv.getContext('2d');       // tela a parte per l'alone dei portelli
 function drawStation() {
-  const p = portAt(S.clock);
-  const q = S.psi0 + Math.PI + S.ws * S.clock;
-  const ex = Math.cos(q) * 34, ey = Math.sin(q) * 34;
-  const bw = Math.max(1.5, 3 * cam.s);
-  line(0, 0, ex, ey, COL.st, bw);
-  circle(ex, ey, 6, COL.st, '#0e1722', 2);
-  line(0, 0, p.px - 2 * p.nx, p.py - 2 * p.ny, COL.st, bw);
-  circle(0, 0, P.hubR, COL.st, '#0e1722', 2);
-  circle(0, 0, P.hubR * 0.6, '#35506b', null, 1);
-  for (let i = 0; i < 4; i++) {                               // raggi del mozzo (mostrano la rotazione)
-    const a = S.ws * S.clock + i * Math.PI / 2 + 0.5;
-    line(Math.cos(a) * 4, Math.sin(a) * 4, Math.cos(a) * 14, Math.sin(a) * 14, '#35506b', 1);
+  // Le forme sono le STESSE usate per le collisioni (stationShapes). Silhouette unica: prima il contorno di tutte le forme, poi i riempimenti,
+  // cosi' i bordi interni sparivano e resta solo il contorno esterno (niente blocchi separati). I dettagli sono interni alle forme.
+  const st = stationShapes(S.clock);
+  const EDGE = '#9fb8d2', CY = '#7fe7ff', DARK = '#0b1722', SEAM = '#4c6a88';
+  const px = (a) => Math.max(1, a * cam.s);                                       // spessore in pixel di una misura in metri, almeno 1 px
+  const poli = (pts, fill, stroke, w) => { ctx.beginPath(); pts.forEach(([x, y], k) => k ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.stroke(); } };
+  const lwO = Math.max(3, 0.16 * cam.s);                                          // contorno esterno (meta' viene coperta dal riempimento)
+  for (const o of st.polys) poli(o.pts, COL.st, EDGE, lwO);
+  circle(0, 0, P.hubR, EDGE, '#10202e', lwO);
+  for (const o of st.polys) poli(o.pts, COL.st, COL.st, 1.2);                       // riempimento + un filo dello stesso colore: copre le fessure di antialiasing fra forme che si toccano
+  circle(0, 0, P.hubR, null, '#10202e');
+  // dettagli dei bracci
+  const dens = cam.s >= 14;                                                       // rivetti solo quando si vedono
+  const clampf = (v) => Math.max(0, Math.min(1, v));
+  const rango = PORTE.map(() => []);                                              // posizioni dei finestrini lungo ogni braccio, per l'accensione a coppie
+  for (const o of st.polys) if (o.k === 'modulo' || o.k === 'testata') {
+    const n = (o.u1 - o.u0) > 6.5 ? 3 : 2;
+    for (let k = 0; k < n; k++) rango[o.i].push(o.u0 + (k + 0.5) * (o.u1 - o.u0) / n);
   }
-  // piastra di attracco con la finestra del porto
-  const cx = p.px - p.nx, cy = p.py - p.ny;
-  const pw = Math.max(2, 2 * cam.s);
-  line(cx + p.tx * 3, cy + p.ty * 3, cx + p.tx * 12, cy + p.ty * 12, COL.st, pw);
-  line(cx - p.tx * 3, cy - p.ty * 3, cx - p.tx * 12, cy - p.ty * 12, COL.st, pw);
-  line(p.px + p.tx * 3, p.py + p.ty * 3, p.px - p.tx * 3, p.py - p.ty * 3, COL.port, Math.max(1.5, 0.6 * cam.s));
-  // luci guida del porto
-  for (const sgn of [-1, 1]) circle(p.px + p.tx * 3 * sgn + p.nx * 0.5, p.py + p.ty * 3 * sgn + p.ny * 0.5, 0.6, COL.port, COL.port);
+  rango.forEach(a => a.sort((x, y) => y - x));                                    // dal portello (u grande) verso il mozzo
+  const dk = S.dock ? { i: S.dock.i, t: S.clock - S.dock.t0 - 0.4 } : null;       // dopo l'aggancio: parte con 0,4 s di ritardo, una coppia ogni 0,28 s
+  const accesa = (i, r) => dk && dk.i === i ? clampf((dk.t - r * 0.28) / 0.25) : 0;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(sx(0), sy(0), P.hubR * cam.s, 0, Math.PI * 2, true); ctx.clip('evenodd');       // i dettagli dei bracci non escono sul mozzo
+  for (const o of st.polys) {
+    const p = portAt(S.clock, o.i), W = (u, v) => [p.nx * u + p.tx * v, p.ny * u + p.ty * v];
+    if (o.k === 'modulo' || o.k === 'testata') {
+      poli(ottagono(o.u0 + 0.35, o.u1 - 0.35, o.hw - 0.35, 0.4).map(([u, v]) => W(u, v)), DARK, CY, Math.max(1, 0.04 * cam.s));      // pannello scuro incassato
+      const n = (o.u1 - o.u0) > 6.5 ? 3 : 2;
+      for (let k = 0; k < n; k++) {                                                // finestrini su due file: come le pareti della nave; si accendono in ciano
+        const c = o.u0 + (k + 0.5) * (o.u1 - o.u0) / n, al = accesa(o.i, rango[o.i].indexOf(c));
+        for (const sg of [-1, 1]) {
+          const q = (m) => [W(c - 0.3 - m, sg * (o.hw - 0.7 + m)), W(c + 0.3 + m, sg * (o.hw - 0.7 + m)), W(c + 0.3 + m, sg * (o.hw - 1.15 - m)), W(c - 0.3 - m, sg * (o.hw - 1.15 - m))];
+          poli(q(0), '#10202e', '#2a4660', 1);
+          if (al > 0) { poli(q(0.35), 'rgba(127,231,255,' + (0.22 * al) + ')'); poli(q(0), 'rgba(127,231,255,' + al + ')'); }
+        }
+      }
+      const a = W(o.u0 + 0.9, 0), b = W(o.u1 - 0.9, 0); line(a[0], a[1], b[0], b[1], '#35506b', 1);
+      if (dens) {                                                                    // rivetti solo sul tratto dritto del bordo (fuori dagli smussi di 0,6 m)
+        const r0 = o.u0 + 0.6 + 0.25, r1 = o.u1 - 0.6 - 0.25, nr = Math.max(1, Math.floor((r1 - r0) / 0.8));
+        for (let k = 0; k <= nr; k++) for (const sg of [-1, 1]) { const c = W(r0 + k * (r1 - r0) / nr, sg * (o.hw - 0.17)); circle(c[0], c[1], 0.06, null, '#c5d6e6'); }
+      }
+    } else if (o.k === 'tubo') {                                                   // condotti lungo il tubo
+      for (const sg of [-1, 1]) { const a = W(o.u0, sg * 0.45), b = W(o.u1, sg * 0.45); line(a[0], a[1], b[0], b[1], SEAM, Math.max(1, 0.05 * cam.s)); }
+    }
+  }
+  ctx.restore();
+  // mozzo: anello, raggi (mostrano la rotazione), moduli sul bordo, bocchettone centrale (solo grafica, sull'asse Z, non raggiungibile)
+  const orient = S.psi0 + S.ws * S.clock;                                       // direzione del braccio principale: le decorazioni del mozzo si orientano rispetto ai bracci
+  circle(0, 0, 11, '#3b5f78', null, Math.max(1, 0.05 * cam.s));
+  for (let k = 0; k < 8; k++) {
+    const a = orient + Math.PI / 8 + k * Math.PI / 4;                            // razze fra un braccio e l'altro, mai sotto l'attacco dei bracci
+    line(Math.cos(a) * 5, Math.sin(a) * 5, Math.cos(a) * 11, Math.sin(a) * 11, '#3b5f78', 1);
+  }
+  for (let k = 0; k < 4; k++) {                                                    // 4 oblo' del mozzo: sempre accesi in ciano
+    const a = orient + k * Math.PI / 2 + Math.PI / 4, hx = Math.cos(a) * 13.5, hy = Math.sin(a) * 13.5;      // a 90 gradi fra loro, a 45 gradi dai bracci
+    circle(hx, hy, 1.0, '#2a4660', '#10202e', Math.max(1, 0.03 * cam.s));
+    circle(hx, hy, 1.6, null, 'rgba(127,231,255,0.22)'); circle(hx, hy, 1.0, null, 'rgba(127,231,255,0.95)');
+  }
+  circle(0, 0, 3.4, CY, '#05070d', Math.max(1, 0.05 * cam.s));
+  circle(0, 0, 2.3, '#35506b', null, 1);
+  for (let k = 0; k < 8; k++) {
+    const a = orient + k * Math.PI / 4;
+    line(Math.cos(a) * 2.3, Math.sin(a) * 2.3, Math.cos(a) * 3.2, Math.sin(a) * 3.2, '#6f8fb0', 1);
+  }
+  // LUCI DI SEGNALAZIONE ciano: agli angoli dei moduli accanto ai tubi, alle punte delle ali e due sul bordo del mozzo (diametro perpendicolare ai bracci).
+  // La luminescenza ondeggia: un'onda corre lungo i bracci dal mozzo verso i portelli.
+  const tt = performance.now() / 1000;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const dimAlone = Math.max(9, 1.5 * cam.s), rLuce = Math.max(1.3, 0.1 * cam.s);
+  const luce = (x, y, fase) => {
+    const a = 0.5 + 0.5 * Math.sin(2 * Math.PI * tt / 2.8 - fase), lum = 0.04 + 0.96 * a * a;          // contrasto forte: da quasi spenta a piena
+    const d = dimAlone * (0.75 + 0.45 * lum);
+    ctx.globalAlpha = 0.85 * lum; ctx.drawImage(luceSprite, x - d / 2, y - d / 2, d, d);
+    ctx.globalAlpha = 0.2 + 0.8 * lum; ctx.fillStyle = '#9fefff'; ctx.beginPath(); ctx.arc(x, y, rLuce, 0, 7); ctx.fill();
+  };
+  for (let i = 0; i < PORTE.length; i++) {
+    const p = portAt(S.clock, i), W = (u, v) => [p.nx * u + p.tx * v, p.ny * u + p.ty * v], c = 0.6;
+    const punti = [];
+    BRACCIO.forEach((s, k) => {
+      if (s.k === 'tubo') return;
+      const prec = BRACCIO[k - 1] && BRACCIO[k - 1].k === 'tubo', succ = BRACCIO[k + 1] && BRACCIO[k + 1].k === 'tubo';        // facce del modulo che si affacciano su un tubo
+      for (const sg of [-1, 1]) {
+        if (prec) punti.push(W(s.u0 + c / 2, sg * (s.hw - c / 2)));                       // meta' dello smusso, il punto piu' esterno dell'angolo
+        if (succ) punti.push(W(s.u1 - c / 2, sg * (s.hw - c / 2)));
+      }
+    });
+    for (const sg of [-1, 1]) for (const u of [44, 40.5]) punti.push(W(u, sg * 12));      // le due punte di ogni ala
+    for (const q of punti) luce(sx(q[0]), sy(q[1]), (q[0] * p.nx + q[1] * p.ny) * 0.16);
+  }
+  for (const sg of [-1, 1]) { const a = orient + sg * Math.PI / 2; luce(sx(Math.cos(a) * P.hubR), sy(Math.sin(a) * P.hubR), 0); }
+  ctx.restore();
+  // giunti dei pannelli sulle ali: linee dritte a v costante, da u = 40,5 a u = 44, uguali sul cuneo e sul blocco di fondo
+  for (let i = 0; i < PORTE.length; i++) {
+    const p = portAt(S.clock, i), W = (u, v) => [p.nx * u + p.tx * v, p.ny * u + p.ty * v];
+    for (const sg of [-1, 1]) for (const v of [4.5, 7.5, 10.5]) { const a = W(40.7, sg * v), b = W(43.8, sg * v); line(a[0], a[1], b[0], b[1], SEAM, 1); }
+  }
+  // ANELLO LUMINOSO verde all'ingresso di ogni portello, con un alone che pulsa lentamente. L'alone si estende esattamente fino al PUNTO DI AGGANCIO
+  // reale (la punta della sonda sull'asse del porto, al piano del porto): il raggio e' calcolato in metri e convertito in pixel con lo zoom.
+  // Per un pulsare fluido l'alone si disegna UNA volta a intensita' fissa su una tela a parte, e il pulsare e' un unico moltiplicatore applicato
+  // quando la tela viene sovrapposta (invece di rifare decine di strati con trasparenze minime, che a ogni fotogramma si arrotondano in modo diverso).
+  const pulso = 0.5 + 0.5 * Math.sin(2 * Math.PI * performance.now() / 1000 / 3.2);       // 0..1, periodo 3,2 s
+  const dpr = window.devicePixelRatio || 1;
+  if (haloCv.width !== cv.width || haloCv.height !== cv.height) { haloCv.width = cv.width; haloCv.height = cv.height; }
+  hctx.setTransform(dpr, 0, 0, dpr, 0, 0); hctx.clearRect(0, 0, W, H);
+  hctx.globalCompositeOperation = 'lighter'; hctx.lineCap = 'round'; hctx.strokeStyle = '#6bff9a';
+  const N = 40, segmenti = [];
+  PORTE.forEach((porta, i) => {
+    const p = portAt(S.clock, i);
+    for (const seg of segmentiAnello(p, porta.tipo)) {
+      const [ax, ay] = seg[0], [bx, by] = seg[1];
+      const R = distPuntoSegmento(p.px, p.py, ax, ay, bx, by) * cam.s;                      // distanza dal punto di aggancio, in pixel
+      const lw = Math.max(2, 0.11 * cam.s);                                                  // spessore dell'anello: 0,11 m, almeno 2 px
+      segmenti.push([ax, ay, bx, by, lw]);
+      hctx.globalAlpha = 0.5 / N;                                                            // strati uguali: la luminosita' cala in modo lineare e arriva a zero al punto di aggancio
+      for (let k = N; k >= 1; k--) {
+        hctx.lineWidth = lw + 2 * R * k / N;
+        hctx.beginPath(); hctx.moveTo(sx(ax), sy(ay)); hctx.lineTo(sx(bx), sy(by)); hctx.stroke();
+      }
+    }
+  });
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.44 + 0.56 * pulso;
+  ctx.drawImage(haloCv, 0, 0); ctx.restore();
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#6bff9a'; ctx.globalAlpha = 0.65 + 0.35 * pulso;
+  for (const [ax, ay, bx, by, lw] of segmenti) { ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); ctx.stroke(); }
+  ctx.restore();
 }
 
 function drawGuidance(withAxis) {
@@ -840,34 +1076,17 @@ function drawGuidance(withAxis) {
   if (withAxis) line(p.px, p.py, p.px + p.nx * L, p.py + p.ny * L, 'rgba(255,179,71,0.35)', 1, [6, 6]);
 }
 
-function drawPrediction() {
-  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left';
-  for (let k = 1; k <= 12; k++) {
-    const pp = portAt(S.clock + k);
-    const shx = S.x + S.vx * k, shy = S.y + S.vy * k;
-    ctx.fillStyle = COL.port; ctx.globalAlpha = 0.7;
-    ctx.fillRect(sx(pp.px) - 1.5, sy(pp.py) - 1.5, 3, 3);
-    ctx.fillStyle = COL.ship;
-    ctx.fillRect(sx(shx) - 1.5, sy(shy) - 1.5, 3, 3);
-    ctx.globalAlpha = 1;
-    if (k % 4 === 0) {
-      ctx.fillStyle = COL.port; ctx.fillText(k + 's', sx(pp.px) + 5, sy(pp.py) - 5);
-      ctx.fillStyle = COL.ship; ctx.fillText(k + 's', sx(shx) + 5, sy(shy) - 5);
-    }
-  }
-}
-
 function drawShip(showAim) {
   const sxp = sx(S.x), syp = sy(S.y), sc = Math.max(cam.s, 1.6);
-  const aim = P.noseLen;
+  const aim = SHIP.punta;
   if (showAim) line(S.x + Math.cos(S.th) * aim, S.y + Math.sin(S.th) * aim,
        S.x + Math.cos(S.th) * (aim + 140), S.y + Math.sin(S.th) * (aim + 140),
-       'rgba(127,231,255,0.25)', 1, [3, 7]);
+       'rgba(255,255,255,0.7)', 1, [4, 6]);
   ctx.save();
-  ctx.translate(sxp, syp); ctx.rotate(-S.th); ctx.scale(sc, sc);
-  const f = S.fl;
+  ctx.translate(sxp, syp); ctx.rotate(-S.th); ctx.scale(sc, sc);              // coordinate locali della nave, in metri: x avanti, y a destra
+  const f = S.fl, ug = SHIP.ugelli;
   ctx.fillStyle = '#ffd08a';
-  if (f.main) { ctx.beginPath(); ctx.moveTo(-1.98, -0.8); ctx.lineTo(-1.98 - 4 * f.main - Math.random() * 1.5, 0); ctx.lineTo(-1.98, 0.8); ctx.fill(); }      // ugello del Mulo
+  if (f.main) { const [mx, my] = ug.main; ctx.beginPath(); ctx.moveTo(mx, my - 0.8); ctx.lineTo(mx - 4 * f.main - Math.random() * 1.5, my); ctx.lineTo(mx, my + 0.8); ctx.fill(); }
   // Getti dei piccoli propulsori: stessa fiammella che sfarfalla del motore principale, ma piu' piccola e bianco-grigia.
   // Partono dal bordo dello scafo e escono nel verso OPPOSTO alla spinta.
   const jet = (x, y, dx, dy, k) => {
@@ -878,40 +1097,43 @@ function drawShip(showAim) {
     ctx.fillStyle = 'rgba(255,255,255,0.95)';                                      // nucleo piu' chiaro
     ctx.beginPath(); ctx.moveTo(x + nx * w * 0.45, y + ny * w * 0.45); ctx.lineTo(x + dx * L * 0.6, y + dy * L * 0.6); ctx.lineTo(x - nx * w * 0.45, y - ny * w * 0.45); ctx.fill();
   };
-  // Posizioni dei piccoli ugelli del Mulo (4 agli angoli, 2 laterali vicino al baricentro); coordinate in metri, muso verso +x
-  if (f.rev) { jet(3.03, 1.24, 1, 0, f.rev); jet(3.03, -1.24, 1, 0, f.rev); }         // frenata: getti in avanti
-  if (f.latL) jet(0.75, 1.26, 0, 1, f.latL);                                         // Q spinge a sinistra: getto a destra
-  if (f.latR) jet(0.75, -1.26, 0, -1, f.latR);                                       // E spinge a destra: getto a sinistra
-  if (f.rotL) { jet(3.03, 1.24, 0, 1, f.rotL); jet(-1.07, -1.24, 0, -1, f.rotL); }   // A: il muso va a sinistra, la coda a destra
-  if (f.rotR) { jet(3.03, -1.24, 0, -1, f.rotR); jet(-1.07, 1.24, 0, 1, f.rotR); }   // D: il contrario
-  // Il Mulo (6 x 3 m): disegno da docs/flotta-astronavi.svg, spostato in avanti perche' la sonda tocchi il portello a P.noseLen.
-  // Solo aspetto: fisica, collisione (cerchio) e punto di contatto restano quelli di prima.
+  const F = ug.front, R = ug.rear, FY = ug.fy, LX = ug.lat, LY = ug.ly;           // posizioni degli ugelli dalla scheda della nave
+  if (f.rev) { jet(F, FY, 1, 0, f.rev); jet(F, -FY, 1, 0, f.rev); }                // frenata: getti in avanti
+  if (f.latL) jet(LX, LY, 0, 1, f.latL);                                           // Q spinge a sinistra: getto a destra
+  if (f.latR) jet(LX, -LY, 0, -1, f.latR);                                         // E spinge a destra: getto a sinistra
+  if (f.rotL) { jet(F, FY, 0, 1, f.rotL); jet(R, -FY, 0, -1, f.rotL); }            // A: il muso va a sinistra, la coda a destra
+  if (f.rotR) { jet(F, -FY, 0, -1, f.rotR); jet(R, FY, 0, 1, f.rotR); }            // D: il contrario
+  // Scafo: le STESSE forme usate per le collisioni (SHIP.parti). Linee e finestrini sono decorazioni interne.
   const flash = S.flash > 0, lw = Math.min(2.2, Math.max(1.2, sc * 0.1)) / sc;      // contorno sottile: 1,2-2,2 pixel a qualsiasi zoom
-  ctx.translate(P.noseLen - 2.925, 0); ctx.scale(0.65, 0.95);
-  const fill = flash ? '#ff8a8a' : '#10202e', edge = flash ? COL.bad : COL.ship, li = lw / 0.8;
-  const forma = (fillC, strokeC, w, dis) => { ctx.fillStyle = fillC; ctx.strokeStyle = strokeC; ctx.lineWidth = w; ctx.beginPath(); dis(); ctx.fill(); ctx.stroke(); };
-  forma('#0b1722', '#4f7e9c', li * 0.7, () => { ctx.rect(-2.9, 1.45, 3.3, 0.16); ctx.rect(-2.9, -1.61, 3.3, 0.16); });          // pannelli radiatori
-  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = li * 0.6; ctx.beginPath();
-  for (const x of [-2.5, -1.0, 0.2]) { ctx.moveTo(x, 1.15); ctx.lineTo(x, 1.45); ctx.moveTo(x, -1.15); ctx.lineTo(x, -1.45); } ctx.stroke();   // tiranti
-  forma(fill, edge, li, () => { ctx.moveTo(-3.65, -0.55); ctx.lineTo(-4.7, -0.95); ctx.lineTo(-4.7, 0.95); ctx.lineTo(-3.65, 0.55); ctx.closePath(); });   // campana del motore
-  forma(fill, edge, li, () => { ctx.moveTo(3.0, -1.15); ctx.lineTo(-3.0, -1.15); ctx.quadraticCurveTo(-3.7, -1.15, -3.7, -0.7); ctx.lineTo(-3.7, 0.7);
-    ctx.quadraticCurveTo(-3.7, 1.15, -3.0, 1.15); ctx.lineTo(3.0, 1.15); ctx.quadraticCurveTo(3.3, 1.15, 3.3, 0.85); ctx.lineTo(3.3, -0.85);
-    ctx.quadraticCurveTo(3.3, -1.15, 3.0, -1.15); ctx.closePath(); });                                                                               // scafo
-  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = li * 0.6; ctx.beginPath();
-  for (const x of [-2.6, -1.2, 0.3, 1.6]) { ctx.moveTo(x, -1.15); ctx.lineTo(x, 1.15); } ctx.stroke();                                                  // giunti dei pannelli
-  ctx.fillStyle = COL.ship; for (const y of [-0.75, -0.14, 0.47]) ctx.fillRect(2.05, y, 0.35, 0.28);                                                     // oblo'
-  forma(fill, edge, li, () => { ctx.rect(3.3, -0.75, 0.3, 1.5); });                                                                                      // anello di aggancio
-  forma(fill, edge, li, () => { ctx.moveTo(3.6, -0.3); ctx.lineTo(4.2, -0.2); ctx.lineTo(4.5, -0.2); ctx.lineTo(4.5, 0.2); ctx.lineTo(4.2, 0.2); ctx.lineTo(3.6, 0.3); ctx.closePath(); });   // sonda
+  const fill = flash ? '#ff8a8a' : '#10202e', edge = flash ? COL.bad : COL.ship;
+  const disegna = parte => {
+    const pan = parte.stile === 'pannello';
+    ctx.fillStyle = pan ? '#0b1722' : fill; ctx.strokeStyle = pan ? '#4f7e9c' : edge; ctx.lineWidth = pan ? lw * 0.7 : lw;
+    ctx.beginPath(); parte.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+  };
+  SHIP.parti.slice(0, 2).forEach(disegna);                                         // pannelli radiatori
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [-2.5, -1.0, 0.2]) { ctx.moveTo(x * 0.65, 1.15 * 0.95); ctx.lineTo(x * 0.65, 1.45 * 0.95); ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, -1.45 * 0.95); } ctx.stroke();   // tiranti
+  SHIP.parti.slice(2).forEach(disegna);                                            // campana, scafo, anello, sonda
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [-2.6, -1.2, 0.3, 1.6]) { ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, 1.15 * 0.95); } ctx.stroke();       // giunti dei pannelli
+  ctx.fillStyle = COL.ship; for (const y of [-0.75, -0.14, 0.47]) ctx.fillRect(2.05 * 0.65, y * 0.95, 0.35 * 0.65, 0.28 * 0.95);          // oblo'
   ctx.restore();
 }
 
-function drawRelVelocity(T) {
-  const p = T.p;
-  const rvx = S.vx - p.vx, rvy = S.vy - p.vy;
-  const sp = Math.hypot(rvx, rvy);
-  if (sp < 0.05) return;
-  const len = Math.min(60, sp * 12);
-  line(S.x, S.y, S.x + rvx / sp * len, S.y + rvy / sp * len, COL.good, 1.5);
+function drawPrediction() {
+  // Proiezione della posizione della nave RISPETTO AL PORTELLO: dove sara' la nave fra 1..12 s (se non spinge piu') vista dal sistema di riferimento della stazione.
+  // Nel sistema della stazione i portelli stanno fermi: la nave e' sul portello quando i puntini ci arrivano. Si ottiene portando la posizione futura
+  // assoluta (posizione + velocita' per il tempo) indietro di quanto la stazione ruota in quel tempo, intorno al centro del mozzo.
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left';
+  for (let k = 1; k <= 12; k++) {
+    const fx = S.x + S.vx * k, fy = S.y + S.vy * k, a = -S.ws * k, c = Math.cos(a), s = Math.sin(a);
+    const rx = fx * c - fy * s, ry = fx * s + fy * c;
+    ctx.fillStyle = COL.ship; ctx.globalAlpha = 0.85;
+    ctx.fillRect(sx(rx) - 1.5, sy(ry) - 1.5, 3, 3);
+    ctx.globalAlpha = 1;
+    if (k % 4 === 0) { ctx.fillStyle = COL.ship; ctx.fillText(k + 's', sx(rx) + 5, sy(ry) - 5); }
+  }
 }
 
 function level(v, max) { return v <= max ? COL.good : v <= 1.5 * max ? COL.warn : COL.bad; }
@@ -1023,8 +1245,8 @@ function overlay(lines, title, tcol) {
 const T_ = COL.txt, D_ = COL.dim, O_ = COL.port, N_ = COL.ship, B_ = '#ffffff';
 const HELP = [
   { t: '1/5  OBIETTIVO E AGGANCIO', l: [
-    ["Devi portare il muso della nave nel portellone (la barra arancio", T_],
-    ["sulla stazione) e agganciarla.", T_],
+    ["Devi portare il muso della nave in uno dei due portelloni (gli anelli", T_],
+    ["verdi sulla stazione) e agganciarla.", T_],
     ["", T_],
     ["È necessario rispettare quattro parametri, tutti insieme, nel momento", T_],
     ["del contatto (i limiti sono nel pannello a destra):", T_],
@@ -1087,8 +1309,8 @@ const HELP = [
   ] },
   { t: '5/5  AIUTI VISIVI E PANNELLO', l: [
     ["AIUTI VISIVI  (tasto P in gioco, oppure 4 nel menu)", O_],
-    ["  completo    cono, asse del portellone, linea di mira, vettore", T_],
-    ["              velocità (verde), previsione a 4, 8, 12 secondi", T_],
+    ["  completo    cono, asse del portellone, linea di mira (bianca),", T_],
+    ["              previsione a 4, 8, 12 secondi rispetto al portellone", T_],
     ["  essenziale  cono di avvicinamento e linea di mira", T_],
     ["  nullo       nessun aiuto nel campo di gioco", T_],
     ["  blind       solo strumenti, senza vedere nave e stazione (in arrivo)", D_],
@@ -1110,7 +1332,7 @@ function drawOverlays() {
   } else if (mode === 'menu') {
     overlay([
       ['COSA DEVI FARE', O_],
-      ['Porta la nave al portellone arancione della stazione e agganciala.', T_],
+      ['Porta la nave a uno dei due portelloni con l\'anello luminoso verde e agganciala.', T_],
       ['È necessario rispettare quattro parametri (tieni sotto controllo i valori limite nel pannello a destra):', T_],
       ['  1  velocità:      avvicinamento al portellone < 1,2 m/s', D_],
       ['  2  scivolamento:  velocità di lato rispetto al portellone < 0,8 m/s', D_],
@@ -1143,6 +1365,7 @@ function drawOverlays() {
       ['Premi INVIO per iniziare', O_, { center: true }],
     ], 'SPACE TRUCKER  -  docking', N_);
   } else if (mode === 'done') {
+    if (S.dock && S.clock - S.dock.t0 < P.pannelloDopo) return;          // dopo l'aggancio il pannello compare dopo l'assestamento e l'accensione dei finestrini
     const r = S.result;
     const riga = (a, b) => a.padEnd(28) + b;
     if (doneDetails) {
@@ -1204,6 +1427,25 @@ function drawOverlays() {
   }
 }
 
+// Tasto C: sovrappone alla grafica i contorni di collisione (magenta). Serve a verificare che disegno e collisione coincidano.
+let debugColl = false;
+function drawDebug() {
+  if (!debugColl) return;
+  ctx.strokeStyle = '#ff2fd0'; ctx.lineWidth = 1; ctx.setLineDash([]);
+  const poli = pts => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.closePath(); ctx.stroke(); };
+  for (const parte of shipWorld()) poli(parte);
+  const st = stationShapes(S.clock);
+  for (const o of st.polys) poli(o.pts);
+  for (const c of st.cerchi) { ctx.beginPath(); ctx.arc(sx(c.x), sy(c.y), c.r * cam.s, 0, Math.PI * 2); ctx.stroke(); }
+  const t = telemetry(); ctx.fillStyle = '#ff2fd0'; ctx.beginPath(); ctx.arc(sx(S.x + Math.cos(S.th) * SHIP.punta), sy(S.y + Math.sin(S.th) * SHIP.punta), 3, 0, 7); ctx.fill();
+  PORTE.forEach((porta, i) => {                                                  // punto di aggancio di ogni porto e raggio a cui arriva l'alone
+    const p = portAt(S.clock, i); let R = Infinity;
+    for (const seg of segmentiAnello(p, porta.tipo)) R = Math.min(R, distPuntoSegmento(p.px, p.py, seg[0][0], seg[0][1], seg[1][0], seg[1][1]));
+    ctx.beginPath(); ctx.moveTo(sx(p.px) - 6, sy(p.py)); ctx.lineTo(sx(p.px) + 6, sy(p.py)); ctx.moveTo(sx(p.px), sy(p.py) - 6); ctx.lineTo(sx(p.px), sy(p.py) + 6); ctx.stroke();
+    ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(sx(p.px), sy(p.py), R * cam.s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  });
+  text('contorni di collisione (C)', 12, H - 44, '#ff2fd0', 11);
+}
 function render() {
   ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W - PANEL, H); ctx.clip();
@@ -1211,8 +1453,9 @@ function render() {
   drawStars();
   if (aids <= 1) drawGuidance(aids === 0);
   drawStation();
-  if (aids === 0) { drawPrediction(); drawRelVelocity(telemetry()); }
+  if (aids === 0) drawPrediction();
   drawShip(aids <= 1);
+  drawDebug();
   ctx.restore();
   text('Space Trucker prototipo docking  v' + VERSION, 12, H - 12, 'rgba(160,180,200,0.55)', 11);
   if (mode === 'run' && down('ShiftLeft', 'ShiftRight')) text('CONTROLLO FINE  30%', (W - PANEL) / 2, 70, COL.warn, 14, 'center');
