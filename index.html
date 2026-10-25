@@ -40,6 +40,7 @@ const P = {
   main: 2.0, reverse: 1.0, lateral: 0.7,       // accelerazioni (m/s^2)
   torque: 0.9, wMax: 1.2, assistTorque: 0.7,   // rotazione (rad/s^2, rad/s)
   fine: 0.3,                                   // fattore con SHIFT (controllo fine)
+  pannelloDopoEsplosione: 2.6,                 // secondi fra la distruzione e il pannello dei risultati (animazione dell'esplosione)
   pannelloDopo: 3.4,                           // secondi fra l'aggancio e la comparsa del pannello dei risultati (assestamento + finestrini che si accendono)
   fuel: 60, useMain: 0.5, useRev: 0.3, useLat: 0.25, useRot: 0.12,
   hubR: 16, boomR: 44,                         // geometria stazione
@@ -52,7 +53,7 @@ const P = {
   engPpm: 30, engIdle: 40, engActive: 0.4,       // 30 pressioni/min = 100; 40 s senza input = 0; 40% del tempo con un tasto premuto = 100
   perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.4.0';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.4.1';                         // da aggiornare a ogni build condivisa
 // Stazione SNODO: due porti, uno per braccio, speculari (come docs/stazione-snodo.svg). Il porto e' un OGGETTO con un tipo di portello:
 //  imbuto  = bocca di 6 m (mezza 3,0) che si stringe: agganci facili
 //  collare = foro di 3,4 m (mezza 1,7) con un labbro in fuori: agganci precisi
@@ -183,7 +184,7 @@ function newRun() {
     contact: null, dock: null, pt: 0,
     failClose: 0, failLat: 0, failAng: 0, failRot: 0, aidTime: [0, 0, 0], aidSwitches: 0,
     fl: { main: 0, rev: 0, latL: 0, latR: 0, rotL: 0, rotR: 0 },
-    alarmHull: false, alarmFuel: false,
+    nextHull: 0, nextFuel: 0, blinkHull: -9, blinkFuel: -9, muteHull: false, muteFuel: false, crit2Hull: false, crit2Fuel: false, boom: null,       // allarmi ripetuti ogni secondo e relativo lampeggio; esplosione
     result: null,
   };
   banner = null;
@@ -376,6 +377,8 @@ addEventListener('keydown', e => {
       aids = (aids + 1) % AIDS_NAMES.length; S.aidSwitches++;
       banner = { text: 'aiuti visivi: ' + AIDS_NAMES[aids], t: 2, col: COL.ship };
     }
+    if (e.code === 'Digit1' && !e.repeat) S.muteHull = !S.muteHull;                 // disinnesco (e riattivazione) dell'allarme sonoro: il lampeggio resta
+    if (e.code === 'Digit2' && !e.repeat) S.muteFuel = !S.muteFuel;
     if (e.code === 'KeyH') openHelp();                 // la guida mette in pausa la partita
   } else if (mode === 'done') {
     if (e.code === 'Enter') { newRun(); mode = 'run'; }
@@ -403,9 +406,13 @@ const CONTROLS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyE', 'ArrowUp', 'Ar
 // Suoni (spenti di default: menu [5] o tasto N). Sintetizzati al volo con WebAudio, nessun file.
 // Provenienza e prove di ascolto: strumenti/prove-suoni.html
 // ---------------------------------------------------------------------------
+const CACHE_RUMORE = {};                                // i buffer di rumore si generano una volta sola per contesto audio e si riusano (generarli sul momento costava 25-50 ms)
 function rumore(ctx, sec) {
-  const n = Math.floor(ctx.sampleRate * (sec || 2)), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  const s = sec || 2, k = 'b' + s, c = CACHE_RUMORE[k];
+  if (c && c.ctx === ctx) return c.b;
+  const n = Math.floor(ctx.sampleRate * s), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  CACHE_RUMORE[k] = { ctx, b };
   return b;
 }
 function inviluppo(ctx, out, t, attacco, decadimento, picco) {
@@ -422,9 +429,12 @@ function tono(ctx, out, t, f0, f1, tipo, attacco, decadimento, picco) {
   o.connect(inviluppo(ctx, out, t, attacco, decadimento, picco));
   o.start(t); o.stop(t + attacco + decadimento + 0.05);
 }
-function rumoreBruno(ctx, sec) {                       // rumore "bruno": piu' energia nei gravi, come una grande massa
+function rumoreBruno(ctx, sec) {                       // rumore "bruno": piu' energia nei gravi, come una grande massa (in cache come sopra)
+  const k = 'r' + sec, c = CACHE_RUMORE[k];
+  if (c && c.ctx === ctx) return c.b;
   const n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
   let x = 0; for (let i = 0; i < n; i++) { x = (x + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = x * 3.5; }
+  CACHE_RUMORE[k] = { ctx, b };
   return b;
 }
 function env20(ctx, out, t, attacco, T20, picco) {
@@ -554,11 +564,11 @@ function suonoDistruzione(ctx, out0, t) {   // un'esplosione tonda e drastica: u
   massa20(ctx, pre, t, 110, 0.006, 1.9, 1.0);
   [[0.38, 0.22], [0.70, 0.14], [1.10, 0.10], [1.60, 0.07], [2.10, 0.05]].forEach(([dt, w]) => massa20(ctx, pre, t + dt, 120, 0.004, 0.25, w));   // pochi tonfi sordi, radi, che si spengono
 }
-function suonoAllarme(ctx, out, t, tipo) {
-  if (tipo === 'integrita') for (let k = 0; k < 3; k++) {
-    tono(ctx, out, t + k * 0.42, 880, 880, 'square', 0.005, 0.16, 0.26);
-    tono(ctx, out, t + k * 0.42 + 0.2, 660, 660, 'square', 0.005, 0.16, 0.26);
-  } else for (let k = 0; k < 2; k++) tono(ctx, out, t + k * 0.55, 520, 440, 'triangle', 0.01, 0.35, 0.40);
+function suonoAllarme(ctx, out, t, tipo) {                // brevi (meno di un secondo): si ripetono ogni secondo finche' dura la condizione critica
+  if (tipo === 'integrita') {
+    tono(ctx, out, t, 880, 880, 'square', 0.005, 0.16, 0.26);
+    tono(ctx, out, t + 0.2, 660, 660, 'square', 0.005, 0.16, 0.26);
+  } else tono(ctx, out, t, 520, 440, 'triangle', 0.01, 0.35, 0.40);
 }
 function suonoRecord(ctx, out, t) {
   [523.25, 659.25, 783.99, 1046.5].forEach((f, k) => tono(ctx, out, t + k * 0.11, f, f, 'sine', 0.01, 0.35, 0.28));
@@ -681,6 +691,7 @@ function sndInit() {                                   // va chiamata da un gest
     const c = sndCatena(SND.ctx); SND.master = c.master; SND.loopBus = c.loops; c.uscita.connect(SND.ctx.destination);
   }
   if (SND.ctx.state === 'suspended') SND.ctx.resume();
+  if (!SND.pronto) { SND.pronto = true; [1, 2, 3, 4].forEach(s => { rumore(SND.ctx, s); rumoreBruno(SND.ctx, s); }); }       // buffer pronti prima che servano: niente scatti agli urti e alla distruzione
 }
 function sndStopLoops() {
   if (SND.motor) { SND.motor.stop(); SND.motor = null; }
@@ -725,15 +736,31 @@ function damage(amount, why) {
   S.hull -= amount; S.dmg += amount; S.flash = 1;
   banner = { text: `${why}  (-${Math.round(amount)}% integrità)`, t: 4, col: COL.bad };
   if (S.hull <= 0) finish('destroyed');
-  else {
-    sndImpact(amount);
-    if (S.hull <= 30 && !S.alarmHull) { S.alarmHull = true; sndPlay((c, o, t) => suonoAllarme(c, o, t, 'integrita'), 0.7); }
-  }
+  else sndImpact(amount);
 }
 
+// Allarmi: da quando si arriva al limite (scafo <= 30%, carburante <= 20%) il suono si ripete ogni secondo, e nello stesso istante lampeggia la voce
+// critica nel pannello (anche con i suoni spenti). Se sono critici entrambi, sono sfasati di mezzo secondo per non coprirsi.
+function aggiornaAllarmi() {
+  // Sotto il 10% (scafo <= 10%, carburante <= 10%) la frequenza raddoppia (ogni mezzo secondo) e, se silenziati, gli allarmi tornano attivi
+  // una volta sola, al momento di entrare in quella zona; si possono silenziare di nuovo con gli stessi tasti.
+  const scafo = S.hull <= 30 && S.hull > 0, carb = S.fuel <= P.fuel * 0.2;
+  const scafo2 = S.hull <= 10 && S.hull > 0, carb2 = S.fuel <= P.fuel * 0.1;
+  if (scafo2 && !S.crit2Hull) { S.crit2Hull = true; S.muteHull = false; S.nextHull = S.t; }                 // entra nella zona: riattivo e suono subito
+  if (carb2 && !S.crit2Fuel) { S.crit2Fuel = true; S.muteFuel = false; S.nextFuel = S.t; }
+  const dH = scafo2 ? 0.5 : 1, dF = carb2 ? 0.5 : 1;
+  if (scafo) {
+    if (S.t >= S.nextHull) { S.nextHull = (S.nextHull > S.t - dH ? S.nextHull : S.t) + dH; S.blinkHull = S.t; if (!S.muteHull) sndPlay((c, o, t) => suonoAllarme(c, o, t, 'integrita')); }
+  } else S.nextHull = S.t;
+  if (carb) {
+    if (S.nextFuel === 0 || S.nextFuel < 0) S.nextFuel = scafo ? S.nextHull + dH / 2 : S.t;       // sfasati di meta' periodo per non coprirsi
+    if (S.t >= S.nextFuel) { S.nextFuel = (S.nextFuel > S.t - dF ? S.nextFuel : S.t) + dF; S.blinkFuel = S.t; if (!S.muteFuel) sndPlay((c, o, t) => suonoAllarme(c, o, t, 'carburante')); }
+  } else S.nextFuel = 0;
+}
 function step(dt) {
   if (mode === 'help') return;                    // guida aperta: tutto fermo
   S.clock += dt;
+  if (S.boom) aggiornaEsplosione(dt);
   if (mode === 'done' && S.dock) { settleDock(); return; }      // agganciata: la nave segue la stazione
   if (mode !== 'run') return;
   S.t += dt;
@@ -767,7 +794,7 @@ function step(dt) {
     if (down('KeyD', 'ArrowRight')) { tq -= P.torque * k; S.fuel -= P.useRot * k * dt; f.rotR = k; }
   }
   if (S.fuel < 0) S.fuel = 0;
-  if (S.fuel <= P.fuel * 0.2 && !S.alarmFuel) { S.alarmFuel = true; sndPlay((c, o, t) => suonoAllarme(c, o, t, 'carburante')); }
+  aggiornaAllarmi();
 
   if (tq === 0 && opts.assist && hasFuel) {      // assistente: mantiene l'assetto relativo alla stazione
     const diff = S.ws - S.w;
@@ -859,6 +886,66 @@ function checkDock() {
   S.prevA = T.a;
 }
 
+// Esplosione: la nave scompare e si spezza nelle sue parti (sagome di SHIP.parti), con scintille, lampo e onda d'urto; tutto in coordinate di mondo.
+// Cosi' non resta una nave "fantasma" ferma mentre la stazione le ruota addosso.
+function creaEsplosione() {
+  const hx = Math.cos(S.th), hy = Math.sin(S.th), rx = Math.sin(S.th), ry = -Math.cos(S.th);
+  const frammenti = SHIP.parti.map(parte => {
+    const pts = parte.pts, c = centroide(pts), wx = S.x + c[0] * hx + c[1] * rx, wy = S.y + c[0] * hy + c[1] * ry;
+    const ang = Math.atan2(wy - S.y, wx - S.x) + (Math.random() - 0.5) * 1.2, sp = 1.5 + Math.random() * 3.5;
+    return { pts, c, x: wx, y: wy, vx: S.vx + Math.cos(ang) * sp, vy: S.vy + Math.sin(ang) * sp, th: S.th, w: (Math.random() - 0.5) * 3 };
+  });
+  const scintille = Array.from({ length: 70 }, () => { const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 8;
+    return { vx: S.vx + Math.cos(a) * sp, vy: S.vy + Math.sin(a) * sp, vita: 0.7 + Math.random() * 1.6, r: 0.08 + Math.random() * 0.18 }; });
+  return { t0: S.clock, x: S.x, y: S.y, vx: S.vx, vy: S.vy, frammenti, scintille };
+}
+function aggiornaEsplosione(dt) {                      // chiamata a ogni passo di fisica: i frammenti volano, ruotano e rimbalzano sulla stazione
+  const B = S.boom;                                                                // i frammenti non si dissolvono: continuano a driftare nello spazio (finche' dura la schermata)
+  const st = stationShapes(S.clock), ostacoli = st.polys.concat(st.cerchi);
+  for (const f of B.frammenti) {
+    f.x += f.vx * dt; f.y += f.vy * dt; f.th += f.w * dt;
+    const hx = Math.cos(f.th), hy = Math.sin(f.th), rx = Math.sin(f.th), ry = -Math.cos(f.th);
+    const poly = f.pts.map(([x, y]) => { const dx = x - f.c[0], dy = y - f.c[1]; return [f.x + dx * hx + dy * rx, f.y + dx * hy + dy * ry]; });
+    for (const o of ostacoli) {
+      const c = o.pts ? satPolyPoly(poly, o.pts) : satPolyCirc(poly, o.x, o.y, o.r);
+      if (!c) continue;
+      f.x += c.nx * c.d; f.y += c.ny * c.d;
+      const vn = (f.vx + S.ws * f.y) * c.nx + (f.vy - S.ws * f.x) * c.ny;           // velocita' relativa alla stazione, lungo la normale
+      if (vn < 0) { f.vx -= 1.5 * vn * c.nx; f.vy -= 1.5 * vn * c.ny; f.w = f.w * 0.7 + (Math.random() - 0.5) * 1.6; }     // rimbalzo (restituzione 0,5)
+      break;
+    }
+  }
+}
+function drawBoom() {
+  const B = S.boom, t = S.clock - B.t0;
+  if (t < 0) return;
+  const bx = B.x + B.vx * t, by = B.y + B.vy * t;
+  ctx.save();
+  if (t < 0.4) {                                                                    // lampo
+    const gr = ctx.createRadialGradient(sx(bx), sy(by), 0, sx(bx), sy(by), 9 * cam.s);
+    const a = 1 - t / 0.4; gr.addColorStop(0, 'rgba(255,250,220,' + a + ')'); gr.addColorStop(0.4, 'rgba(255,170,70,' + a * 0.6 + ')'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(sx(bx), sy(by), 9 * cam.s, 0, 7); ctx.fill();
+  }
+  if (t < 1.2) {                                                                    // onda d'urto
+    ctx.strokeStyle = 'rgba(255,208,138,' + (1 - t / 1.2) * 0.8 + ')'; ctx.lineWidth = Math.max(2, 0.14 * cam.s);
+    ctx.beginPath(); ctx.arc(sx(bx), sy(by), 20 * (1 - Math.exp(-t * 2.6)) * cam.s, 0, 7); ctx.stroke();
+  }
+  for (const f of B.frammenti) {                                                    // le parti della nave che si allontanano ruotando
+    const fx = f.x, fy = f.y, th = f.th;                                               // stato corrente, aggiornato dalla fisica (con i rimbalzi)
+    const hx = Math.cos(th), hy = Math.sin(th), rx = Math.sin(th), ry = -Math.cos(th);
+    ctx.globalAlpha = 1; ctx.fillStyle = '#10202e'; ctx.strokeStyle = t < 0.7 ? '#ffb347' : '#7fe7ff'; ctx.lineWidth = Math.max(1.2, 0.07 * cam.s);
+    ctx.beginPath();
+    f.pts.forEach(([x, y], i) => { const dx = x - f.c[0], dy = y - f.c[1], wx = fx + dx * hx + dy * rx, wy = fy + dx * hy + dy * ry; i ? ctx.lineTo(sx(wx), sy(wy)) : ctx.moveTo(sx(wx), sy(wy)); });
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'lighter';
+  for (const s of B.scintille) {                                                    // scintille: da bianche ad arancio a rosso
+    if (t > s.vita) continue;
+    ctx.globalAlpha = 1 - t / s.vita; ctx.fillStyle = t < 0.3 ? '#ffffff' : t < 0.8 ? '#ffd08a' : '#ff7a3a';
+    ctx.beginPath(); ctx.arc(sx(bx - B.vx * t + s.vx * t), sy(by - B.vy * t + s.vy * t), Math.max(1, s.r * cam.s), 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
 function finish(kind, perfect) {
   mode = 'done';
   const speedBonus = Math.round(clamp(P.speedMax - P.speedRate * S.t, 0, P.speedMax));
@@ -877,7 +964,7 @@ function finish(kind, perfect) {
   if (kind === 'docked') {
     sndPlay((c, o, t) => suonoAggancio(c, o, t, !!perfect), 0, 1.5);                  // piu' forte: e' il momento piu' importante
     if (nuovoRecord) sndPlay((c, o, t) => suonoRecord(c, o, t), 2.4);
-  } else if (kind === 'destroyed') sndPlay((c, o, t) => suonoDistruzione(c, o, t));
+  } else if (kind === 'destroyed') { sndPlay((c, o, t) => suonoDistruzione(c, o, t)); S.boom = creaEsplosione(); }
   logRun(kind === 'docked' ? 'docked' : kind);
 }
 
@@ -1077,6 +1164,7 @@ function drawGuidance(withAxis) {
 }
 
 function drawShip(showAim) {
+  if (S.boom) { drawBoom(); return; }                                              // distrutta: al posto della nave c'e' l'esplosione
   const sxp = sx(S.x), syp = sy(S.y), sc = Math.max(cam.s, 1.6);
   const aim = SHIP.punta;
   if (showAim) line(S.x + Math.cos(S.th) * aim, S.y + Math.sin(S.th) * aim,
@@ -1179,11 +1267,16 @@ function drawHud() {
   text('la tacca bianca è il limite per agganciare', x, 266, COL.dim, 10);
 
   const hullCol = S.hull > 50 ? COL.good : S.hull > 20 ? COL.warn : COL.bad;
-  text('INTEGRITÀ SCAFO', x, 304, COL.dim, 12); text(Math.max(0, Math.round(S.hull)) + '%', x + w, 304, hullCol, 14, 'right'); bar(x, 310, w, S.hull / 100, hullCol);
-  text('PROPELLENTE', x, 340, COL.dim, 12); bar(x, 346, w, S.fuel / P.fuel, S.fuel > 15 ? COL.good : S.fuel > 6 ? COL.warn : COL.bad);
+  const lampH = S.hull <= 30 && S.hull > 0 && S.t - S.blinkHull < 0.35, lampF = S.fuel <= P.fuel * 0.2 && S.t - S.blinkFuel < 0.35;     // acceso nell'istante del suono
+  if (lampH) { ctx.fillStyle = 'rgba(255,90,90,0.30)'; ctx.fillRect(x - 6, 288, w + 12, 40); }
+  if (lampF) { ctx.fillStyle = 'rgba(255,90,90,0.30)'; ctx.fillRect(x - 6, 324, w + 12, 40); }
+  text('INTEGRITÀ SCAFO', x, 304, lampH ? COL.txt : COL.dim, 12); text(Math.max(0, Math.round(S.hull)) + '%', x + w, 304, hullCol, 14, 'right'); bar(x, 310, w, S.hull / 100, hullCol);
+  text('PROPELLENTE', x, 340, lampF ? COL.txt : COL.dim, 12); bar(x, 346, w, S.fuel / P.fuel, S.fuel > 15 ? COL.good : S.fuel > 6 ? COL.warn : COL.bad);
   const bonus = Math.round(clamp(P.speedMax - P.speedRate * S.t, 0, P.speedMax));
   text('tempo', x, 386, COL.dim, 12); text(S.t.toFixed(0) + ' s', x + w, 386, COL.txt, 14, 'right');
   text('bonus rapidità', x, 406, COL.dim, 12); text('+' + bonus, x + w, 406, bonus > 0 ? COL.warn : COL.dim, 14, 'right');
+  if (S.hull <= 30 && S.hull > 0) fitText('[1]  silenzia allarme integrità', x, 434, w, COL.warn, 11);                  // compaiono solo quando l'allarme e' attivo
+  if (S.fuel <= P.fuel * 0.2) fitText('[2]  silenzia allarme propellente', x, 450, w, COL.warn, 11);
 
   fitText(`stabilizzatore ${opts.assist ? 'SI' : 'no'}  |  laterali ${opts.lateral ? 'SI' : 'no'}`, x, H - 142, w, COL.dim, 11);
   fitText(`stazione ${SPIN_NAMES[opts.spin]}  |  aiuti ${AIDS_NAMES[aids]}`, x, H - 126, w, COL.dim, 11);
@@ -1365,6 +1458,7 @@ function drawOverlays() {
       ['Premi INVIO per iniziare', O_, { center: true }],
     ], 'SPACE TRUCKER  -  docking', N_);
   } else if (mode === 'done') {
+    if (S.boom && S.clock - S.boom.t0 < P.pannelloDopoEsplosione) return;                   // dopo la distruzione il pannello compare a esplosione quasi finita
     if (S.dock && S.clock - S.dock.t0 < P.pannelloDopo) return;          // dopo l'aggancio il pannello compare dopo l'assestamento e l'accensione dei finestrini
     const r = S.result;
     const riga = (a, b) => a.padEnd(28) + b;
