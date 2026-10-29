@@ -53,7 +53,7 @@ const P = {
   engPpm: 30, engIdle: 40, engActive: 0.4,       // 30 pressioni/min = 100; 40 s senza input = 0; 40% del tempo con un tasto premuto = 100
   perfectFrac: 0.5,                              // "perfetto" = tutti e 4 i parametri entro il 50% del limite
 };
-const VERSION = '0.4.1';                         // da aggiornare a ogni build condivisa
+const VERSION = '0.5.0';                         // da aggiornare a ogni build condivisa
 // Stazione SNODO: due porti, uno per braccio, speculari (come docs/stazione-snodo.svg). Il porto e' un OGGETTO con un tipo di portello:
 //  imbuto  = bocca di 6 m (mezza 3,0) che si stringe: agganci facili
 //  collare = foro di 3,4 m (mezza 1,7) con un labbro in fuori: agganci precisi
@@ -136,7 +136,7 @@ function logRun(result) {
     dmg: Math.round(S.dmg), bounces: S.bounces, hits: S.hits,
     score: S.result ? S.result.score : 0,
     assist: sino(opts.assist), lateral: sino(opts.lateral), spin: SPIN_NAMES[opts.spin], sound: sino(opts.sound),
-    station: STAZIONE, port: PORTE[S.dock ? S.dock.i : S.pt].id, portType: PORTE[S.dock ? S.dock.i : S.pt].tipo,
+    ship: SHIP.nome, station: STAZIONE, port: PORTE[S.dock ? S.dock.i : S.pt].id, portType: PORTE[S.dock ? S.dock.i : S.pt].tipo,
     presses: S.presses, active: Math.round(100 * S.active / Math.max(S.t, 0.1)),
     idleMax: Math.round(Math.max(S.maxIdle, S.idle) * 10) / 10,
     firstInput: Math.round((S.firstInput === null ? S.t : S.firstInput) * 10) / 10,
@@ -216,7 +216,93 @@ const MULO = (() => {                                  // 6 x 3 m. Misure dal di
     ugelli: { main: [-3.055, 0], front: 1.95, rear: -2.145, fy: 1.235, lat: -0.325, ly: 1.264 },   // posizioni degli ugelli (m)
   };
 })();
-const SHIP = MULO;
+
+// ---------------------------------------------------------------------------
+// FLOTTA. Ogni nave e' una scheda: forme (collisione = disegno), sonda, ugelli, accelerazioni. Mulo e Destriero sono giocabili;
+// Bisonte e Mammuth hanno solo il blueprint (approccio assiale al bocchettone sull'asse Z: non ancora in gioco).
+// ---------------------------------------------------------------------------
+function disegnaParte(ctx, parte, lw, fill, edge) {
+  const pan = parte.stile === 'pannello';
+  ctx.fillStyle = pan ? '#0b1722' : fill; ctx.strokeStyle = pan ? '#4f7e9c' : edge; ctx.lineWidth = pan ? lw * 0.7 : lw;
+  ctx.beginPath(); parte.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+MULO.fis = { main: 2.0, reverse: 1.0, lateral: 0.7, torque: 0.9, assistTorque: 0.7 };
+MULO.disponibile = true; MULO.ruolo = 'La nave iniziale'; MULO.dimensioni = '6 m x 3,1 m  (scafo 2,2 m)'; MULO.classePorto = 'standard (finestra 6 m)';
+MULO.tipo = 'Astronave cargo modulare leggera, classe "Mulo"'; MULO.config = 'pila di moduli lungo l\'asse di spinta'; MULO.carico = '8 t'; MULO.costo = '120.000 cr'; MULO.equipaggio = '2 persone'; MULO.consumo = '0,8 kg/s a piena spinta';
+MULO.agg = [{ nome: 'sonda', mis: '0,4 m', x: 4.5 * 0.65, h: 0.2 * 0.95, xq: 0.25, lab: 'sotto' }, { nome: 'anello', mis: '1,4 m', x: 3.6 * 0.65, h: 0.75 * 0.95, xq: 1.9, lab: 'sopra' }];
+MULO.punti = { motore: [[-3.055, 0]], rcsE: [[1.95, 1.235], [1.95, -1.235], [-2.145, 1.235], [-2.145, -1.235]], rcsL: [[-0.325, 1.264], [-0.325, -1.264]] };
+MULO.sonda = 'sonda frontale 0,4 m + anello 1,4 m';
+MULO.disegna = (ctx, lw, fill, edge) => {
+  const dp = q => disegnaParte(ctx, q, lw, fill, edge);
+  MULO.parti.slice(0, 2).forEach(dp);                                              // pannelli radiatori
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [-2.5, -1.0, 0.2]) { ctx.moveTo(x * 0.65, 1.15 * 0.95); ctx.lineTo(x * 0.65, 1.45 * 0.95); ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, -1.45 * 0.95); } ctx.stroke();   // tiranti
+  MULO.parti.slice(2).forEach(dp);                                                 // campana, scafo, anello, sonda
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [-2.6, -1.2, 0.3, 1.6]) { ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, 1.15 * 0.95); } ctx.stroke();       // giunti dei pannelli
+  ctx.fillStyle = COL.ship; for (const y of [-0.75, -0.14, 0.47]) ctx.fillRect(2.05 * 0.65, y * 0.95, 0.35 * 0.65, 0.28 * 0.95);          // oblo'
+};
+
+const DESTRIERO = (() => {                              // 12 x 2,3 m. Misure dal disegno docs/flotta-astronavi.svg (scala 1,24 x 0,85). Solo sonda, senza anello.
+  const k = pts => esc(pts, 1.24, 0.85);
+  return {
+    nome: 'Destriero',
+    parti: [
+      { stile: 'pannello', pts: k([[-3.2, 1.25], [1.0, 1.25], [1.0, 1.37], [-3.2, 1.37]]) },
+      { stile: 'pannello', pts: k([[-3.2, -1.37], [1.0, -1.37], [1.0, -1.25], [-3.2, -1.25]]) },
+      { stile: 'scafo', pts: k([[-3.9, -0.6], [-4.9, -1.0], [-4.9, 1.0], [-3.9, 0.6]]) },                               // campana del motore
+      { stile: 'scafo', pts: k([[4.4, 0], [3.3, -0.5], [2.6, -0.78], [-3.4, -0.78], [-3.9, -0.62], [-3.9, 0.62], [-3.4, 0.78], [2.6, 0.78], [3.3, 0.5]]) },   // cilindro snello
+      { stile: 'scafo', pts: k([[4.35, -0.15], [4.8, -0.15], [4.8, 0.15], [4.35, 0.15]]) },                              // sonda
+    ],
+    punta: 4.8 * 1.24, anelloMezzo: 0.15 * 0.85,       // nessun anello: conta solo la larghezza della sonda
+    ugelli: { main: [-6.076, 0], front: 3.72, rear: -4.34, fy: 0.765, ry: 0.807, lat: -0.248, ly: 0.79 },
+    fis: { main: 2.2, reverse: 1.1, lateral: 0.7, torque: 0.45, assistTorque: 0.35 },
+    disponibile: true, ruolo: 'Il corriere', dimensioni: '12 m x 2,3 m', classePorto: 'standard (finestra 6 m)',
+    tipo: 'Astronave corriere veloce, classe "Destriero"', config: 'cilindro snello, pinne radiatore assiali', carico: '2 t', costo: '340.000 cr', equipaggio: '1 persona', consumo: '1,4 kg/s a piena spinta',
+    agg: [{ nome: 'sonda', mis: '0,26 m', x: 4.8 * 1.24, h: 0.15 * 0.85, xq: 0.25, lab: 'sotto' }],
+    punti: { motore: [[-6.076, 0]], rcsE: [[3.72, 0.765], [3.72, -0.765], [-4.34, 0.807], [-4.34, -0.807]], rcsL: [[-0.248, 0.79], [-0.248, -0.79]] },
+    sonda: 'sonda frontale 0,26 m (senza anello)',
+  };
+})();
+DESTRIERO.disegna = (ctx, lw, fill, edge) => {
+  const dp = q => disegnaParte(ctx, q, lw, fill, edge), X = 1.24, Y = 0.85;
+  DESTRIERO.parti.slice(0, 2).forEach(dp);
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [-2.8, -1.2, 0.4]) { ctx.moveTo(x * X, 0.78 * Y); ctx.lineTo(x * X, 1.25 * Y); ctx.moveTo(x * X, -0.78 * Y); ctx.lineTo(x * X, -1.25 * Y); } ctx.stroke();   // tiranti
+  DESTRIERO.parti.slice(2).forEach(dp);
+  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
+  for (const x of [1.6, 0.2, -1.4, -2.8]) { ctx.moveTo(x * X, -0.78 * Y); ctx.lineTo(x * X, 0.78 * Y); } ctx.stroke();                          // giunti dei pannelli
+  ctx.fillStyle = COL.ship; ctx.beginPath();                                                                                                // cabina
+  [[3.15, -0.17], [2.5, -0.42], [2.5, 0.42], [3.15, 0.17]].forEach(([x, y], i) => i ? ctx.lineTo(x * X, y * Y) : ctx.moveTo(x * X, y * Y)); ctx.closePath(); ctx.fill();
+};
+
+const rett = (x, y, w, h, stile) => ({ stile: stile || 'scafo', pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] });
+const BISONTE = {                                       // solo blueprint: 16 x 8 m, 6 container, porto pesante sull'asse Z
+  nome: 'Bisonte', disponibile: false, ruolo: 'Il grande carico', dimensioni: '16,1 m x 7,6 m', classePorto: 'pesante (finestra 10 m)',
+  parti: [rett(-6.9, 2.0, 3.4, 0.18, 'pannello'), rett(-6.9, -2.18, 3.4, 0.18, 'pannello'),
+    { stile: 'scafo', pts: [[-7.1, -0.9], [-8.35, -1.5], [-8.35, 1.5], [-7.1, 0.9]] }, rett(-7.2, -1.4, 1.8, 2.8), rett(-5.4, -0.6, 10.2, 1.2),
+    ...[-4.6, -2.2, 0.2].flatMap(x => [rett(x, 0.85, 2.2, 2.7, 'pannello'), rett(x, -3.55, 2.2, 2.7, 'pannello')]),
+    rett(4.8, -1.0, 1.5, 2.0), rett(6.3, -0.85, 0.28, 1.7), { stile: 'scafo', pts: [[6.58, -0.4], [7.7, -0.25], [7.7, 0.25], [6.58, 0.4]] }],
+  punti: { motore: [[-8.35, 0]], rcsE: [[6.0, 1.2], [6.0, -1.2], [-6.3, 1.65], [-6.3, -1.65]], rcsL: [[-2.4, 3.8], [-2.4, -3.8], [1.3, 3.8], [1.3, -3.8]] },
+  sonda: 'sonda frontale 0,5 m + anello 1,7 m, su asse Z',
+  fis: { main: 1.2, reverse: 0.6, lateral: 0.4, torque: 0.12, assistTorque: 0.1 },
+  agg: [{ nome: 'sonda', mis: '0,5 m', x: 7.7, h: 0.25, xq: 0.25, lab: 'sotto' }, { nome: 'anello', mis: '1,7 m', x: 6.58, h: 0.85, xq: 1.9, lab: 'sopra' }],
+  tipo: 'Astronave cargo pesante, classe "Bisonte"', config: 'dorsale a traliccio, 6 container', carico: '60 t (6 container)', costo: '1.200.000 cr', equipaggio: '4 persone', consumo: '4,5 kg/s a piena spinta',
+};
+const MAMMUTH = {                                       // solo blueprint: vista laterale del corpo; anello rotante 40 x 29 m, porto grande sul mozzo (asse Z)
+  nome: 'Mammuth', disponibile: false, ruolo: 'Il colosso con l\'anello', dimensioni: '24,8 m x 18 m  (anello 40 x 29)', classePorto: 'grande (finestra 20 m)',
+  parti: [rett(-9.8, 2.0, 5.4, 0.14, 'pannello'), rett(-9.8, -2.14, 5.4, 0.14, 'pannello'),
+    { stile: 'scafo', pts: [[-10.3, -1.0], [-12.3, -1.9], [-12.3, 1.9], [-10.3, 1.0]] }, rett(-10.4, -1.7, 6.4, 3.4), rett(-4, -0.9, 14, 1.8), rett(-2.2, -9, 2.4, 18),
+    rett(10, -0.7, 1.2, 1.4), rett(11.2, -0.6, 0.3, 1.2), { stile: 'scafo', pts: [[11.5, -0.3], [12.5, -0.2], [12.5, 0.2], [11.5, 0.3]] }],
+  punti: { motore: [[-12.3, 0]], rcsE: [[10.2, 1.1], [10.2, -1.1], [-9.8, 1.95], [-9.8, -1.95]], rcsL: [[2.2, 1.1], [2.2, -1.1]] },
+  sonda: 'sonda frontale 0,4 m + anello 1,2 m, su asse Z',
+  fis: { main: 0.8, reverse: 0.4, lateral: 0.25, torque: 0.05, assistTorque: 0.04 },
+  agg: [{ nome: 'sonda', mis: '0,4 m', x: 12.5, h: 0.2, xq: 0.25, lab: 'sotto' }, { nome: 'anello', mis: '1,2 m', x: 11.5, h: 0.6, xq: 1.9, lab: 'sopra' }],
+  tipo: 'Astronave da trasporto ad anello, classe "Mammuth"', config: 'anello rotante, mozzo centrale fisso', carico: '400 t', costo: '8.500.000 cr', equipaggio: '12 persone', consumo: '18 kg/s a piena spinta',
+};
+const SHIPS = [MULO, DESTRIERO, BISONTE, MAMMUTH];
+let SHIP = MULO, naveSel = 0, hangarIdx = 0, hangarAvviso = 0;
+function scegliNave(i) { naveSel = i; SHIP = SHIPS[i]; Object.assign(P, SHIP.fis); }
 
 // Nave nel mondo: ogni parte come poligono in coordinate di mondo (y del mondo verso l'alto).
 function shipWorld() {
@@ -369,7 +455,17 @@ addEventListener('keydown', e => {
     if (e.code === 'Digit4') aids = (aids + 1) % AIDS_NAMES.length;
     if (e.code === 'Digit5') toggleSound();
     if (e.code === 'KeyH') openHelp();
-    if (e.code === 'Enter' || e.code === 'Space') { if (opts.sound) sndInit(); mode = 'run'; }
+    if (e.code === 'Enter' || e.code === 'Space') { if (opts.sound) sndInit(); hangarIdx = naveSel; mode = 'hangar'; }          // INVIO porta all'hangar
+  } else if (mode === 'hangar') {
+    const n = SHIPS.length;
+    if (['ArrowRight', 'KeyD'].includes(e.code)) hangarIdx = (hangarIdx + 1) % n;                  // circolare: dopo l'ultima si ricomincia dalla prima
+    if (['ArrowLeft', 'KeyA'].includes(e.code)) hangarIdx = (hangarIdx + n - 1) % n;
+    if (e.code === 'Enter' || e.code === 'Space') {
+      if (SHIPS[hangarIdx].disponibile) { scegliNave(hangarIdx); newRun(); mode = 'run'; }
+      else hangarAvviso = 1.6;                                                                      // nave non disponibile: avviso, non parte
+    }
+    if (e.code === 'KeyM' || e.code === 'Escape') mode = 'menu';
+    if (e.code === 'KeyH') openHelp();
   } else if (mode === 'run') {
     if (e.code === 'Enter') { logRun('abandoned'); newRun(); }      // ricomincia il tentativo
     if (e.code === 'KeyM' || e.code === 'Escape') { logRun('abandoned'); mode = 'menu'; newRun(); }
@@ -377,8 +473,8 @@ addEventListener('keydown', e => {
       aids = (aids + 1) % AIDS_NAMES.length; S.aidSwitches++;
       banner = { text: 'aiuti visivi: ' + AIDS_NAMES[aids], t: 2, col: COL.ship };
     }
-    if (e.code === 'Digit1' && !e.repeat) S.muteHull = !S.muteHull;                 // disinnesco (e riattivazione) dell'allarme sonoro: il lampeggio resta
-    if (e.code === 'Digit2' && !e.repeat) S.muteFuel = !S.muteFuel;
+    if (e.code === 'Digit1' && !e.repeat && !S.crit2Hull) S.muteHull = !S.muteHull;      // disinnesco (e riattivazione) dell'allarme sonoro: il lampeggio resta; sotto la soglia critica non si puo' piu' silenziare
+    if (e.code === 'Digit2' && !e.repeat && !S.crit2Fuel) S.muteFuel = !S.muteFuel;
     if (e.code === 'KeyH') openHelp();                 // la guida mette in pausa la partita
   } else if (mode === 'done') {
     if (e.code === 'Enter') { newRun(); mode = 'run'; }
@@ -742,8 +838,8 @@ function damage(amount, why) {
 // Allarmi: da quando si arriva al limite (scafo <= 30%, carburante <= 20%) il suono si ripete ogni secondo, e nello stesso istante lampeggia la voce
 // critica nel pannello (anche con i suoni spenti). Se sono critici entrambi, sono sfasati di mezzo secondo per non coprirsi.
 function aggiornaAllarmi() {
-  // Sotto il 10% (scafo <= 10%, carburante <= 10%) la frequenza raddoppia (ogni mezzo secondo) e, se silenziati, gli allarmi tornano attivi
-  // una volta sola, al momento di entrare in quella zona; si possono silenziare di nuovo con gli stessi tasti.
+  // Sotto il 10% (scafo <= 10%, carburante <= 10%) la frequenza raddoppia (ogni mezzo secondo), l'allarme torna attivo al momento di entrare
+  // in quella zona e da quel momento NON si puo' piu' silenziare (i tasti 1 e 2 non hanno effetto).
   const scafo = S.hull <= 30 && S.hull > 0, carb = S.fuel <= P.fuel * 0.2;
   const scafo2 = S.hull <= 10 && S.hull > 0, carb2 = S.fuel <= P.fuel * 0.1;
   if (scafo2 && !S.crit2Hull) { S.crit2Hull = true; S.muteHull = false; S.nextHull = S.t; }                 // entra nella zona: riattivo e suono subito
@@ -1185,27 +1281,16 @@ function drawShip(showAim) {
     ctx.fillStyle = 'rgba(255,255,255,0.95)';                                      // nucleo piu' chiaro
     ctx.beginPath(); ctx.moveTo(x + nx * w * 0.45, y + ny * w * 0.45); ctx.lineTo(x + dx * L * 0.6, y + dy * L * 0.6); ctx.lineTo(x - nx * w * 0.45, y - ny * w * 0.45); ctx.fill();
   };
-  const F = ug.front, R = ug.rear, FY = ug.fy, LX = ug.lat, LY = ug.ly;           // posizioni degli ugelli dalla scheda della nave
+  const F = ug.front, R = ug.rear, FY = ug.fy, RY = ug.ry || ug.fy, LX = ug.lat, LY = ug.ly;           // posizioni degli ugelli dalla scheda della nave
   if (f.rev) { jet(F, FY, 1, 0, f.rev); jet(F, -FY, 1, 0, f.rev); }                // frenata: getti in avanti
   if (f.latL) jet(LX, LY, 0, 1, f.latL);                                           // Q spinge a sinistra: getto a destra
   if (f.latR) jet(LX, -LY, 0, -1, f.latR);                                         // E spinge a destra: getto a sinistra
-  if (f.rotL) { jet(F, FY, 0, 1, f.rotL); jet(R, -FY, 0, -1, f.rotL); }            // A: il muso va a sinistra, la coda a destra
-  if (f.rotR) { jet(F, -FY, 0, -1, f.rotR); jet(R, FY, 0, 1, f.rotR); }            // D: il contrario
-  // Scafo: le STESSE forme usate per le collisioni (SHIP.parti). Linee e finestrini sono decorazioni interne.
+  if (f.rotL) { jet(F, FY, 0, 1, f.rotL); jet(R, -RY, 0, -1, f.rotL); }            // A: il muso va a sinistra, la coda a destra
+  if (f.rotR) { jet(F, -FY, 0, -1, f.rotR); jet(R, RY, 0, 1, f.rotR); }            // D: il contrario
+  // Scafo: le STESSE forme usate per le collisioni (SHIP.parti). Linee e finestrini sono decorazioni interne, definite nella scheda della nave.
   const flash = S.flash > 0, lw = Math.min(2.2, Math.max(1.2, sc * 0.1)) / sc;      // contorno sottile: 1,2-2,2 pixel a qualsiasi zoom
   const fill = flash ? '#ff8a8a' : '#10202e', edge = flash ? COL.bad : COL.ship;
-  const disegna = parte => {
-    const pan = parte.stile === 'pannello';
-    ctx.fillStyle = pan ? '#0b1722' : fill; ctx.strokeStyle = pan ? '#4f7e9c' : edge; ctx.lineWidth = pan ? lw * 0.7 : lw;
-    ctx.beginPath(); parte.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); ctx.stroke();
-  };
-  SHIP.parti.slice(0, 2).forEach(disegna);                                         // pannelli radiatori
-  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
-  for (const x of [-2.5, -1.0, 0.2]) { ctx.moveTo(x * 0.65, 1.15 * 0.95); ctx.lineTo(x * 0.65, 1.45 * 0.95); ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, -1.45 * 0.95); } ctx.stroke();   // tiranti
-  SHIP.parti.slice(2).forEach(disegna);                                            // campana, scafo, anello, sonda
-  ctx.strokeStyle = '#3b5f78'; ctx.lineWidth = lw * 0.6; ctx.beginPath();
-  for (const x of [-2.6, -1.2, 0.3, 1.6]) { ctx.moveTo(x * 0.65, -1.15 * 0.95); ctx.lineTo(x * 0.65, 1.15 * 0.95); } ctx.stroke();       // giunti dei pannelli
-  ctx.fillStyle = COL.ship; for (const y of [-0.75, -0.14, 0.47]) ctx.fillRect(2.05 * 0.65, y * 0.95, 0.35 * 0.65, 0.28 * 0.95);          // oblo'
+  SHIP.disegna(ctx, lw, fill, edge);
   ctx.restore();
 }
 
@@ -1275,12 +1360,12 @@ function drawHud() {
   const bonus = Math.round(clamp(P.speedMax - P.speedRate * S.t, 0, P.speedMax));
   text('tempo', x, 386, COL.dim, 12); text(S.t.toFixed(0) + ' s', x + w, 386, COL.txt, 14, 'right');
   text('bonus rapidità', x, 406, COL.dim, 12); text('+' + bonus, x + w, 406, bonus > 0 ? COL.warn : COL.dim, 14, 'right');
-  if (S.hull <= 30 && S.hull > 0) fitText('[1]  silenzia allarme integrità', x, 434, w, COL.warn, 11);                  // compaiono solo quando l'allarme e' attivo
-  if (S.fuel <= P.fuel * 0.2) fitText('[2]  silenzia allarme propellente', x, 450, w, COL.warn, 11);
+  if (S.hull <= 30 && S.hull > 0) fitText(S.crit2Hull ? 'allarme integrità critico: non silenziabile' : '[1]  silenzia allarme integrità', x, 434, w, S.crit2Hull ? COL.bad : COL.warn, 11);                  // compaiono solo quando l'allarme e' attivo
+  if (S.fuel <= P.fuel * 0.2) fitText(S.crit2Fuel ? 'allarme propellente critico: non silenziabile' : '[2]  silenzia allarme propellente', x, 450, w, S.crit2Fuel ? COL.bad : COL.warn, 11);
 
   fitText(`stabilizzatore ${opts.assist ? 'SI' : 'no'}  |  laterali ${opts.lateral ? 'SI' : 'no'}`, x, H - 142, w, COL.dim, 11);
   fitText(`stazione ${SPIN_NAMES[opts.spin]}  |  aiuti ${AIDS_NAMES[aids]}`, x, H - 126, w, COL.dim, 11);
-  const help = ['↑ ↓ ← → (o WASD)  spinta e rotazione', opts.lateral ? 'Q / E  spinta laterale' : '', 'SHIFT + tasto  correzioni fini (30%)', 'P aiuti   N suoni   INVIO riprova', 'M menu   H guida'];
+  const help = ['↑ ↓ ← → (o WASD)  spinta e rotazione', opts.lateral ? 'Q / E  spinta laterale' : '', 'SHIFT + tasto  precisione (30%)', 'P aiuti   N suoni   INVIO riprova', 'M menu   H guida'];
   help.forEach((h, i) => fitText(h, x, H - 100 + i * 17, w, COL.dim, 12));
 }
 
@@ -1295,6 +1380,7 @@ function overlay(lines, title, tcol) {
     const labW = Math.max(0, ...optRows.map(o => ctx.measureText(o.n + '   ' + o.label).width));
     let w = 360;
     for (const l of lines) {
+      if (l[2] && l[2].draw) continue;
       if (l[2] && l[2].opt) {
         const chips = l[2].opt.values.reduce((a, v) => a + ctx.measureText(v).width + 14 + 6, 0);
         w = Math.max(w, labW + 32 + chips);
@@ -1315,7 +1401,8 @@ function overlay(lines, title, tcol) {
   text(title, bx + bw / 2, by + 42, tcol, 22, 'center');
   lines.forEach((l, i) => {
     const y = by + 82 + i * lh, ex = l[2] || {};
-    if (ex.opt) {                                         // riga-opzione: etichetta + valori; quello scelto e' evidenziato
+    if (ex.draw) ex.draw(bx + pad, y - size, bw - 2 * pad, ex.lines * lh - 6);
+    else if (ex.opt) {                                         // riga-opzione: etichetta + valori; quello scelto e' evidenziato
       const o = ex.opt;
       text(o.n, bx + pad, y, COL.ship, size);
       text(o.label, bx + pad + ctx.measureText(o.n + '   ').width, y, COL.txt, size);
@@ -1335,89 +1422,298 @@ function overlay(lines, title, tcol) {
   });
 }
 
-const T_ = COL.txt, D_ = COL.dim, O_ = COL.port, N_ = COL.ship, B_ = '#ffffff';
+const T_ = COL.txt, D_ = COL.dim, O_ = COL.port, N_ = COL.ship, B_ = '#ffffff', C_ = COL.good;      // C_: consigli
+// Figure per la guida: disegnano dentro il riquadro [x, y, w, h] (in pixel); le righe di testo sotto la figura sono riservate da img().
+function helpAidsDemo(x, y, w, h) {                                                // gli aiuti visivi: completo, essenziale, nullo
+  const gap = 14, cw = (w - 2 * gap) / 3, ch = h - 20;
+  ['completo', 'essenziale', 'nullo'].forEach((nm, k) => {
+    const x0 = x + k * (cw + gap), cx = x0 + cw / 2, py = y + 16, len = ch - 30;
+    ctx.fillStyle = '#070d14'; ctx.fillRect(x0, y, cw, ch); ctx.strokeStyle = '#27455f'; ctx.lineWidth = 1; ctx.strokeRect(x0, y, cw, ch);
+    if (nm !== 'nullo') {                                                         // cono di avvicinamento
+      ctx.fillStyle = 'rgba(255,179,71,0.14)'; ctx.beginPath(); ctx.moveTo(cx, py); ctx.lineTo(cx - len * 0.25, py + len); ctx.lineTo(cx + len * 0.25, py + len); ctx.closePath(); ctx.fill();
+    }
+    if (nm === 'completo') {                                                      // asse del portellone
+      ctx.strokeStyle = 'rgba(255,179,71,0.6)'; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.moveTo(cx, py); ctx.lineTo(cx, py + len); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#2a3f55'; ctx.fillRect(x0 + 10, py - 9, cw / 2 - 10 - 9, 9); ctx.fillRect(cx + 9, py - 9, cw / 2 - 10 - 9, 9);          // ali del portellone
+    ctx.fillStyle = '#6bff9a'; ctx.fillRect(cx - 9, py - 9, 2, 9); ctx.fillRect(cx + 7, py - 9, 2, 9);                                     // luci dell'anello
+    const sx0 = cx + cw * 0.14, sy0 = y + ch - 24;                                // nave, con la parte frontale verso il portellone
+    ctx.fillStyle = '#10202e'; ctx.strokeStyle = COL.ship; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(sx0 - 5, sy0 + 12); ctx.lineTo(sx0 - 5, sy0 - 4); ctx.lineTo(sx0 - 1.5, sy0 - 8); ctx.lineTo(sx0 + 1.5, sy0 - 8); ctx.lineTo(sx0 + 5, sy0 - 4); ctx.lineTo(sx0 + 5, sy0 + 12); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (nm !== 'nullo') {                                                         // direttrice di mira
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(sx0, sy0 - 9); ctx.lineTo(sx0, py + 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (nm === 'completo') {                                                      // previsione a 4, 8, 12 secondi: traiettoria curva che passa di lato al portellone
+      const p0x = sx0, p0y = sy0 - 9, p1x = sx0 + cw * 0.02, p1y = py + ch * 0.28, p2x = cx - cw * 0.40, p2y = py + 34;
+      ctx.font = '9px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left';
+      for (let t = 1; t <= 12; t++) {
+        const f = t / 12, u = 1 - f, px = u * u * p0x + 2 * u * f * p1x + f * f * p2x, qy = u * u * p0y + 2 * u * f * p1y + f * f * p2y;
+        ctx.fillStyle = COL.ship; ctx.fillRect(px - 1.5, qy - 1.5, 3, 3);
+        if (t % 4 === 0) ctx.fillText(t + 's', px + 5, qy - 4);
+      }
+    }
+    text(nm.toUpperCase(), cx, y + ch + 14, COL.ship, 11, 'center');
+  });
+}
+function helpBarsDemo(x, y, w, h) {                                                // le barre degli indicatori: nel limite, vicino al limite, fuori
+  const rh = h / 3, bx0 = x + 250, bw0 = w - 250;
+  [['verde: nel limite', 0.6, COL.good], ['giallo: fuori limite, di poco', 1.25, COL.warn], ['rosso: decisamente fuori', 1.8, COL.bad]].forEach(([nm, v, col], i) => {
+    const yy = y + i * rh + rh * 0.55;
+    text(nm, x, yy + 4, COL.dim, 11);
+    ctx.fillStyle = '#16202b'; ctx.fillRect(bx0, yy - 2, bw0, 5);
+    ctx.fillStyle = col; ctx.fillRect(bx0, yy - 2, bw0 * v / 2, 5);
+    ctx.fillStyle = COL.txt; ctx.fillRect(bx0 + bw0 / 2 - 1, yy - 5, 2, 11);
+  });
+}
+const img = (n, fn) => [[null, null, { draw: fn, lines: n }], ...Array.from({ length: n - 1 }, () => ['', T_])];
+
 const HELP = [
-  { t: '1/5  OBIETTIVO E AGGANCIO', l: [
-    ["Devi portare il muso della nave in uno dei due portelloni (gli anelli", T_],
-    ["verdi sulla stazione) e agganciarla.", T_],
+  { t: '1/7  OBIETTIVO E AGGANCIO', l: [
+    ["Agganciati alla stazione spaziale. Inserisci la parte frontale della nave", T_],
+    ["in uno dei due portelloni con l'anello luminoso verde.", T_],
     ["", T_],
-    ["È necessario rispettare quattro parametri, tutti insieme, nel momento", T_],
-    ["del contatto (i limiti sono nel pannello a destra):", T_],
+    ["Per non danneggiare l'astronave è necessario rispettare quattro parametri,", T_],
+    ["tutti insieme, nel momento del contatto (valori limite nel pannello a destra):", T_],
     ["  1  velocità       avvicinamento al portellone < 1,2 m/s", N_],
     ["  2  scivolamento   velocità di lato rispetto al portellone < 0,8 m/s", N_],
     ["  3  allineamento   asse della nave parallelo all'asse del portellone", N_],
     ["                    (errore < 12 gradi)", N_],
     ["  4  rotazione      sincrona rispetto alla stazione < 0,12 rad/s", N_],
     ["", T_],
-    ["Se non rispetti i parametri d'arrivo rimbalzi e perdi integrità dello", T_],
-    ["scafo; un messaggio ti dice quale parametro era sbagliato.", T_],
+    ["Se all'arrivo non sei entro i limiti, rimbalzerai danneggiando lo scafo.", T_],
+    ["Un messaggio indica quale parametro era fuori limite.", T_],
     ["Con l'integrità a 0% la nave è distrutta.", T_],
   ] },
-  { t: "2/5  L'INERZIA", l: [
-    ["Nello spazio non c'è attrito: ogni spinta cambia la velocità e la", T_],
-    ["nave la mantiene finché non la cambi tu.", T_],
+  { t: "2/7  INERZIA E PROPELLENTE", l: [
+    ["INERZIA", O_],
+    ["  Nello spazio non c'è attrito: velocità e rotazione restano costanti", T_],
+    ["  finché non le modifichi.", T_],
+    ["  Spinta       dopo una spinta la nave continua alla stessa velocità,", T_],
+    ["               senza rallentare. Per frenare spingi nel verso opposto", T_],
+    ["               (S o freccia giù) fino a fermarla.", T_],
+    ["  Rotazione    dopo A o D la nave continua a ruotare. Per fermarla ruota", T_],
+    ["               nel verso opposto, oppure usa lo stabilizzatore (pagina 4).", T_],
     ["", T_],
-    ["  Spingi avanti e lasci il tasto: la nave continua ad andare", T_],
-    ["  alla stessa velocità. Non si ferma da sola.", T_],
-    ["  Per fermarti spingi in senso opposto (S o freccia giù).", T_],
-    ["  Lo stesso vale per la rotazione: dopo A o D la nave continua", T_],
-    ["  a girare finché non la contrasti (o la ferma lo stabilizzatore).", T_],
+    ["PROPELLENTE", O_],
+    ["  Ogni spinta lo consuma; a zero i comandi non rispondono.", T_],
     ["", T_],
-    ["Il propellente è limitato: ogni spinta lo consuma.", T_],
-    ["Regola pratica: correggi poco e presto, poi aspetta e guarda", O_],
-    ["cosa succede. Le correzioni brusche si pagano dopo.", O_],
+    ["►  CONSIGLIO", C_],
+    ["   Correggi poco e presto, poi osserva l'effetto.", C_],
+    ["   Le correzioni brusche costano propellente e tempo.", C_],
   ] },
-  { t: '3/5  COMANDI E SHIFT', l: [
-    ["↑ / ↓   (o W / S)   spinta avanti e indietro", T_],
-    ["← / →   (o A / D)   ruota la nave", T_],
-    ["Q / E               spinta laterale sinistra e destra (rispetto al muso)", T_],
+  { t: '3/7  COMANDI E CONTROLLO DI PRECISIONE', l: [
+    ["COMANDI", O_],
+    ["  ↑ / ↓   (o W / S)   spinta avanti / indietro", T_],
+    ["  ← / →   (o A / D)   ruota la nave", T_],
+    ["  Q / E               spinta laterale sinistra / destra", T_],
+    ["  P aiuti visivi    N suoni    INVIO ricomincia    M menu    H guida", T_],
     ["", T_],
-    ["SHIFT non fa niente da solo: si tiene premuto INSIEME a un altro", T_],
-    ["tasto di movimento e lo rende più dolce, al 30% della forza.", T_],
-    ["È come premere l'acceleratore solo a metà.", T_],
+    ["CONTROLLO DI PRECISIONE", O_],
+    ["  SHIFT + [tasto di movimento]   limita il comando al 30% della potenza base.", T_],
+    ["  SHIFT non agisce da solo: va tenuto premuto insieme a un tasto di", T_],
+    ["  movimento. È come premere il comando solo un po'.", T_],
+    ["  Mentre è attivo compare in alto la scritta CONTROLLO DI PRECISIONE.", T_],
     ["", T_],
-    ["Esempio 1: arrivi a 1,5 m/s e il limite è 1,2. Un colpo di S di", N_],
-    ["mezzo secondo toglie 0,5 m/s: troppo. Con SHIFT+S ne toglie 0,15.", N_],
-    ["Esempio 2: sei storto e vuoi correggere piano. Mezzo secondo di A", N_],
-    ["ti fa girare a 0,45 rad/s (il limite è 0,12). Con SHIFT+A, 0,14.", N_],
-    ["Esempio 3: devi spostarti di pochi metri: SHIFT+Q oppure SHIFT+E.", N_],
-    ["", T_],
-    ["Mentre è attivo, in alto compare la scritta CONTROLLO FINE.", D_],
+    ["►  CONSIGLIO", C_],
+    ["   Usa il controllo di precisione per le correzioni finali vicino al", C_],
+    ["   portellone: velocità, scivolamento laterale e angolo.", C_],
   ] },
-  { t: '4/5  STABILIZZATORE, LATERALI, STAZIONE', l: [
-    ["FERMA AUTOMATICAMENTE LA ROTAZIONE (opzione 1, lo stabilizzatore)", O_],
-    ["Lavora SOLO sulla rotazione. Se non premi A/D frena la rotazione", T_],
-    ["fino a fermare l'orientamento della nave. Non frena il movimento", T_],
-    ["della nave nello spazio: quello continua.", T_],
-    ["Se la stazione gira, ti fa girare con lei: l'angolo rispetto al", T_],
-    ["portellone resta com'è. Senza stabilizzatore, dopo ogni colpo di A/D", T_],
-    ["la nave ruota all'infinito finché non la contrasti tu.", T_],
+  { t: '4/7  STABILIZZATORE, LATERALI, STAZIONE', l: [
+    ["STABILIZZATORE  (opzione 1 del menu)", O_],
+    ["  Senza stabilizzatore la rotazione della nave continua finché non viene", T_],
+    ["  contrastata da una spinta di rotazione nel verso opposto.", T_],
+    ["  Con lo stabilizzatore, quando rilasci A e D, la nave ferma la propria", T_],
+    ["  rotazione rispetto alla stazione e mantiene l'angolo raggiunto rispetto", T_],
+    ["  al portellone. Agisce solo sulla rotazione, a qualsiasi distanza dalla", T_],
+    ["  stazione, finché c'è propellente.", T_],
+    ["  Non allinea la nave al portellone: l'angolo si imposta con A e D.", T_],
     ["", T_],
-    ["PROPULSORI LATERALI (opzione 2)", O_],
-    ["Q/E spingono la nave di lato senza ruotarla. Senza, per spostarti", T_],
-    ["di lato devi girare, spingere e rigirare.", T_],
+    ["►  CONSIGLIO", C_],
+    ["   Durante la frenata la nave ruota ancora un po': rilascia A o D un", C_],
+    ["   attimo prima di raggiungere l'angolo voluto.", C_],
     ["", T_],
-    ["ROTAZIONE STAZIONE (opzione 3)", O_],
-    ["Se gira, il portellone si muove: devi seguirne posizione e rotazione.", T_],
+    ["PROPULSORI LATERALI  (opzione 2)", O_],
+    ["  Q / E spingono la nave di lato senza ruotarla. Senza, per spostarti di", T_],
+    ["  lato devi ruotare, spingere e ruotare di nuovo.", T_],
+    ["", T_],
+    ["ROTAZIONE STAZIONE  (opzione 3: ferma, piano, medio, veloce)", O_],
+    ["  Se la stazione ruota, il portellone si muove: segui posizione e rotazione.", T_],
   ] },
-  { t: '5/5  AIUTI VISIVI E PANNELLO', l: [
-    ["AIUTI VISIVI  (tasto P in gioco, oppure 4 nel menu)", O_],
-    ["  completo    cono, asse del portellone, linea di mira (bianca),", T_],
-    ["              previsione a 4, 8, 12 secondi rispetto al portellone", T_],
-    ["  essenziale  cono di avvicinamento e linea di mira", T_],
-    ["  nullo       nessun aiuto nel campo di gioco", T_],
-    ["  blind       solo strumenti, senza vedere nave e stazione (in arrivo)", D_],
+  { t: '5/7  AIUTI VISIVI', l: [
+    ["AIUTI VISIVI  (tasto P in gioco, opzione 4 del menu)", O_],
+    ...img(7, helpAidsDemo),
+    ["  Cono               area di avvicinamento al portellone", T_],
+    ["  Asse               linea tratteggiata al centro del portellone", T_],
+    ["  Direttrice         linea bianca dalla parte frontale: dove punta la nave", T_],
+    ["  Previsione         posizione futura (4, 8, 12 s) rispetto al portellone,", T_],
+    ["                     se non spingi più", T_],
+    ["  COMPLETO: tutti gli aiuti.  ESSENZIALE: cono e direttrice.  NULLO: nessuno.", N_],
+    ["  BLIND: solo strumenti, senza vedere nave e stazione (in arrivo).", D_],
+  ] },
+  { t: '6/7  PANNELLO E ALLARMI', l: [
+    ["PANNELLO A DESTRA", O_],
+    ["  distanza            dalla parte frontale della nave al portellone", T_],
+    ["  contatto fra        tempo stimato al contatto (-- se ti allontani)", T_],
+    ["  offset laterale     distanza dall'asse del portellone (verde sotto i 3 m)", T_],
+    ["  avvicinamento       velocità verso il portellone       [parametro 1]", T_],
+    ["  velocità laterale   velocità di lato                   [parametro 2]", T_],
+    ["  errore d'angolo     angolo rispetto all'asse           [parametro 3]", T_],
+    ["  rotazione relativa  rotazione rispetto alla stazione   [parametro 4]", T_],
+    ["  La tacca bianca di ogni barra è il limite: si aggancia solo con tutte", T_],
+    ["  le barre dei parametri nel limite (verdi).", T_],
+    ...img(3, helpBarsDemo),
+    ["  integrità scafo     100% = intatto; a 0% la nave è distrutta", T_],
+    ["  propellente         carburante residuo", T_],
+    ["  tempo, bonus        il bonus rapidità diminuisce col tempo", T_],
     ["", T_],
-    ["PANNELLO A DESTRA  (sempre attivo)", O_],
-    ["  Le barre mostrano quanto sei lontano dal limite per agganciare:", T_],
-    ["  la tacca bianca è il limite. Verde = a posto, giallo = vicino", T_],
-    ["  al limite, rosso = fuori.", T_],
-    ["  distanza: dal muso al portellone.  contatto fra: tempo stimato.", T_],
-    ["  offset laterale: distanza dall'asse (entro 3 m per entrare).", T_],
+    ["ALLARMI", O_],
+    ["  Si attivano quando integrità o propellente scendono sotto una soglia di", T_],
+    ["  rischio: suono ripetuto e voce lampeggiante nel pannello.", T_],
+    ["  Tasto 1 (integrità) e tasto 2 (propellente) silenziano il suono.", T_],
+    ["  Sotto una soglia critica l'allarme si intensifica e non è più silenziabile.", T_],
+  ] },
+  { t: '7/7  NAVI E PORTELLONI', l: [
+    ["SCELTA DELLA NAVE  (INVIO nel menu apre l'hangar)", O_],
+    ["  ← / →  (o A / D)   scorri le navi, in modo circolare", T_],
+    ["  INVIO               scegli la nave e inizia        M  menu     H  guida", T_],
+    ["", T_],
+    ["NAVI", O_],
+    ["  Mulo        cargo modulare leggero: rotazione rapida", T_],
+    ["  Destriero   corriere veloce: lungo e stretto, spinta alta, rotazione lenta", T_],
+    ["  Bisonte, Mammuth: non ancora disponibili.", D_],
+    ["", T_],
+    ["PORTELLONI", O_],
+    ["  Entrambi sono identificati da un led verde che pulsa leggermente.", T_],
+    ["  Imbuto   bocca larga: aggancio più facile", T_],
+    ["  Collare  foro stretto con labbro: aggancio più preciso", T_],
+    ["  La centratura richiesta è lo scarto massimo del centro dell'aggancio", T_],
+    ["  dall'asse del portellone (± m).", T_],
+    ["", T_],
+    ["AGGANCIO PERFETTO", O_],
+    ["  Se tutti e quattro i parametri sono entro il 50% dei limiti, l'aggancio", T_],
+    ["  è perfetto e dà un bonus di +300 punti.", T_],
+    ["", T_],
+    ["PORTELLONI SULL'ASSE Z  (in sviluppo)", O_],
+    ["  Bisonte e Mammuth si agganceranno a portelloni posti sull'asse", T_],
+    ["  perpendicolare alla pianta della stazione (meccanica in sviluppo).", T_],
+    ["", T_],
   ] },
 ];
 
+
+// ---------------------------------------------------------------------------
+// HANGAR: finestra come il menu. Blueprint della nave, misure e valori tecnici; frecce per scorrere (circolare); INVIO la sceglie e fa partire il gioco.
+// ---------------------------------------------------------------------------
+function estensione(nave) {                                                        // riquadro che contiene forme e punti dei getti (m)
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  const add = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  nave.parti.forEach(q => q.pts.forEach(([x, y]) => add(x, y)));
+  Object.values(nave.punti).forEach(l => l.forEach(([x, y]) => add(x, y)));                      // anche i getti: sono parte dell'ingombro
+  return { x0, x1, y0, y1 };
+}
+const TOLLERANZE = { 'Mulo': 'imbuto ±2,2 m   collare ±0,65 m', 'Destriero': 'imbuto ±2,8 m   collare ±1,5 m' };      // misurate con la simulazione (agganci riusciti)
+function drawHangar() {
+  const nave = SHIPS[hangarIdx], n = SHIPS.length;
+  const avail = W - PANEL - 20, bw = Math.min(avail, 980), bh = Math.min(H - 34, 640), bx = (W - PANEL - bw) / 2, by = Math.max(10, H - bh - 24);
+  const mono = (sz, bold) => `${bold ? 'bold ' : ''}${sz}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.fillStyle = 'rgba(5,9,15,0.94)'; ctx.fillRect(bx, by, bw, bh); ctx.strokeStyle = COL.ship; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
+  const sz = bw < 760 ? 11 : 13;
+  text('HANGAR', bx + bw / 2, by + 38, COL.ship, 22, 'center');
+  // selettore circolare: nomi in fila, quello scelto evidenziato
+  const nomi = SHIPS.map(s => s.nome), totW = bw - 80; let cx = bx + 40;
+  ctx.font = mono(sz + 1); text('◄', bx + 18, by + 72, COL.dim, 16, 'center'); text('►', bx + bw - 18, by + 72, COL.dim, 16, 'center');
+  nomi.forEach((nm, k) => {
+    const cw = totW / n, sel = k === hangarIdx, etichetta = nm.toUpperCase() + (SHIPS[k].disponibile ? '' : ' (n.d.)');
+    if (sel) { ctx.fillStyle = COL.ship; ctx.fillRect(cx + 4, by + 56, cw - 8, 24); }
+    let fz = sz + 1; ctx.font = mono(fz, sel); while (ctx.measureText(etichetta).width > cw - 14 && fz > 8) { fz -= 0.5; ctx.font = mono(fz, sel); }
+    ctx.textAlign = 'center'; ctx.fillStyle = sel ? '#05070d' : (SHIPS[k].disponibile ? COL.txt : COL.dim);
+    ctx.fillText(etichetta, cx + cw / 2, by + 73);
+    cx += cw;
+  });
+  // area blueprint (sinistra) e valori tecnici (destra)
+  const stretto = bw < 820;                                                        // finestra stretta: blueprint in alto, scheda sotto su due colonne
+  const topY = by + 96, ax = bx + 24, aw = stretto ? bw - 48 : Math.round(bw * 0.58), ah = stretto ? Math.round((bh - 96 - 64) * 0.46) : bh - 96 - 64;
+  ctx.fillStyle = '#0a2140'; ctx.fillRect(ax, topY, aw, ah); ctx.strokeStyle = '#2d5a8c'; ctx.lineWidth = 1; ctx.strokeRect(ax, topY, aw, ah);
+  const E = estensione(nave), exPx = nave.agg ? 185 : 0, mx = nave.agg ? 40 : 70, my = 56;     // ex: spazio a destra per le quote di sonda e anello
+  const sc = Math.min((aw - 2 * mx - exPx) / (E.x1 - E.x0), (ah - 2 * my) / (E.y1 - E.y0));
+  const ox = ax + (aw - exPx) / 2 - (E.x0 + E.x1) / 2 * sc, oy = topY + ah / 2 - (E.y0 + E.y1) / 2 * sc;       // la y della nave (verso destra del muso) va in basso sullo schermo
+  const X = x => ox + x * sc;
+  // griglia: una linea ogni metro (ogni 5 m piu' marcata); se e' troppo fitta ogni 5 m
+  const passo = sc >= 7 ? 1 : 5;
+  ctx.lineWidth = 1;
+  for (let m = Math.ceil((ax - ox) / sc / passo) * passo; ox + m * sc < ax + aw; m += passo) { ctx.strokeStyle = m % 5 === 0 ? '#1d4a7a' : '#123a63'; ctx.beginPath(); ctx.moveTo(ox + m * sc, topY); ctx.lineTo(ox + m * sc, topY + ah); ctx.stroke(); }
+  for (let m = Math.ceil((topY - oy) / sc / passo) * passo; oy + m * sc < topY + ah; m += passo) { ctx.strokeStyle = m % 5 === 0 ? '#1d4a7a' : '#123a63'; ctx.beginPath(); ctx.moveTo(ax, oy + m * sc); ctx.lineTo(ax + aw, oy + m * sc); ctx.stroke(); }
+  ctx.save(); ctx.beginPath(); ctx.rect(ax, topY, aw, ah); ctx.clip();
+  nave.parti.forEach(q => {                                                                         // blueprint: contorni chiari, riempimento leggero
+    ctx.beginPath(); q.pts.forEach(([x, y], i) => i ? ctx.lineTo(X(x), oy + y * sc) : ctx.moveTo(X(x), oy + y * sc)); ctx.closePath();
+    ctx.fillStyle = q.stile === 'pannello' ? 'rgba(120,170,230,0.10)' : 'rgba(150,200,255,0.12)'; ctx.fill();
+    ctx.strokeStyle = q.stile === 'pannello' ? '#6fa4de' : '#d4eaff'; ctx.lineWidth = q.stile === 'pannello' ? 1 : 1.5; ctx.stroke();
+  });
+  const pt = (x, y, r, col, pieno) => { ctx.beginPath(); ctx.arc(X(x), oy + y * sc, Math.max(2.5, r * sc), 0, 7); if (pieno) { ctx.fillStyle = col; ctx.fill(); } else { ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.stroke(); } };
+  nave.punti.motore.forEach(([x, y]) => pt(x, y, 0.28, '#ffb347', true));                                  // motore
+  nave.punti.rcsE.forEach(([x, y]) => pt(x, y, 0.2, '#ffffff', false));                                    // getti di rotazione e frenata (estremita')
+  nave.punti.rcsL.forEach(([x, y]) => pt(x, y, 0.2, '#6bff9a', false));                                    // getti laterali
+  pt(0, 0, 0.3, '#ff6a6a', false); ctx.strokeStyle = '#ff6a6a'; ctx.beginPath(); ctx.moveTo(X(0) - 8, oy); ctx.lineTo(X(0) + 8, oy); ctx.moveTo(X(0), oy - 8); ctx.lineTo(X(0), oy + 8); ctx.stroke();   // baricentro
+  ctx.restore();
+  // quote: lunghezza sotto e larghezza a destra, con frecce
+  const L = E.x1 - E.x0, Wd = E.y1 - E.y0, qy = Math.min(topY + ah - 18, oy + E.y1 * sc + 26), qx = Math.min(ax + aw - 18, X(E.x1) + (exPx || 28));
+  const quota = (x1, y1, x2, y2, etic, orizz) => {
+    ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const d = orizz ? [1, 0] : [0, 1], a = 6;
+    for (const [px, py, s] of [[x1, y1, 1], [x2, y2, -1]]) { ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + d[0] * a * s - d[1] * 3, py + d[1] * a * s + d[0] * 3); ctx.lineTo(px + d[0] * a * s + d[1] * 3, py + d[1] * a * s - d[0] * 3); ctx.closePath(); ctx.fillStyle = '#ffb347'; ctx.fill(); }
+    if (!etic) return;
+    const mxp = (x1 + x2) / 2, myp = (y1 + y2) / 2;
+    ctx.fillStyle = '#0a2140'; ctx.font = mono(11); const tw = ctx.measureText(etic).width; ctx.fillRect(orizz ? mxp - tw / 2 - 3 : mxp - tw / 2 - 3, myp - 8, tw + 6, 14);
+    text(etic, mxp, myp + 3, '#ffb347', 11, 'center');
+  };
+  const fmt = v => (Math.round(v * 10) / 10).toString().replace('.', ',') + ' m';
+  quota(X(E.x0), qy, X(E.x1), qy, fmt(L), true);
+  quota(qx, oy + E.y0 * sc, qx, oy + E.y1 * sc, fmt(Wd), false);
+  (nave.agg || []).forEach(a => {                                                                   // quote dell'aggancio: sonda e anello, con linee di richiamo
+    const px = X(E.x1) + (a.lab === 'sopra' ? 112 : 18), y1 = oy - a.h * sc, y2 = oy + a.h * sc, etic = a.nome + ' ' + a.mis;
+    ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(X(a.x), y1); ctx.lineTo(px + 4, y1); ctx.moveTo(X(a.x), y2); ctx.lineTo(px + 4, y2); ctx.stroke(); ctx.restore();
+    quota(px, y1, px, y2, '', false);
+    if (a.lab === 'sopra') text(etic, px, y1 - 8, '#ffb347', 11, 'center'); else text(etic, px + 8, oy + 4, '#ffb347', 11);
+  });
+  text(nave.tipo, ax + 8, topY + 16, '#8cc2ff', 11);
+  let lx = ax + 14; const ly = topY + ah - 11;                                                       // legenda con gli stessi simboli del disegno
+  [['motore', '#ffb347', true], ['rotazione/frenata', '#ffffff', false], ['laterali', '#6bff9a', false], ['baricentro', '#ff6a6a', false]].forEach(([s, col, pieno], i) => {
+    ctx.beginPath(); ctx.arc(lx, ly, 4.5, 0, 7); if (pieno) { ctx.fillStyle = col; ctx.fill(); } else { ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.stroke(); }
+    if (i === 3) { ctx.beginPath(); ctx.moveTo(lx - 3, ly); ctx.lineTo(lx + 3, ly); ctx.moveTo(lx, ly - 3); ctx.lineTo(lx, ly + 3); ctx.stroke(); }
+    text(s, lx + 10, ly + 3.5, '#6f9fd0', 9.5); lx += 10 + ctx.measureText(s).width + 16;
+  });
+  if (!nave.disponibile) {                                                                          // avviso: nave non ancora in gioco
+    ctx.save(); ctx.translate(ax + aw / 2, topY + 52); ctx.rotate(-0.05);
+    ctx.fillStyle = 'rgba(40,20,0,0.85)'; ctx.fillRect(-150, -20, 300, 40); ctx.strokeStyle = COL.warn; ctx.lineWidth = 2; ctx.strokeRect(-150, -20, 300, 40);
+    text('NON DISPONIBILE', 0, 7, COL.warn, 21, 'center'); ctx.restore();
+  }
+  // scheda tecnica: a destra del blueprint, oppure sotto su due colonne se la finestra e' stretta
+  const righe = [['Dimensioni', nave.dimensioni], ['Portello compatibile', nave.classePorto, nave.disponibile ? COL.txt : COL.warn], ['Aggancio', nave.sonda], ['Configurazione', nave.config], ['Carico utile', nave.carico], ['Costo di acquisto', nave.costo], ['Equipaggio', nave.equipaggio], ['Consumo carburante', nave.consumo]];
+  {
+    righe.push(['Spinta avanti / frenata', (nave.fis.main + '').replace('.', ',') + ' / ' + (nave.fis.reverse + '').replace('.', ',') + ' m/s²']);
+    righe.push(['Spinta laterale / rotazione', (nave.fis.lateral + '').replace('.', ',') + ' m/s²  /  ' + (nave.fis.torque + '').replace('.', ',') + ' rad/s²']);
+    righe.push(['Centratura richiesta (± dall\'asse)', TOLLERANZE[nave.nome] || '—']);
+  }
+  if (!nave.disponibile) righe.push(['Stato', 'approccio assiale (asse Z): in preparazione', COL.warn]);
+  const x0t = stretto ? ax : ax + aw + 24, wTot = stretto ? aw : bx + bw - 24 - x0t, yMax = by + bh - 48;
+  let ty = topY + (stretto ? ah + 24 : 6);
+  text(nave.nome.toUpperCase(), x0t, ty + 12, COL.ship, stretto ? 17 : 20);
+  ty += stretto ? 28 : 36;
+  const colonne = stretto ? 2 : 1, cwid = wTot / colonne - (stretto ? 10 : 0), perCol = Math.ceil(righe.length / colonne), rh = 2 * sz + 10;
+  righe.forEach(([a, b, col], k) => { const c = Math.floor(k / perCol), r = k % perCol, rx = x0t + c * (cwid + 20), ry = ty + r * rh;
+    fitText(a, rx, ry, cwid, COL.dim, sz - 1); fitText(b, rx, ry + sz + 3, cwid, col || COL.txt, sz); });
+  // piede: indicazione e avviso
+  const fy = by + bh - 26;
+  text('◄ ►  cambia nave    INVIO  scegli e parti    M  menu    H  guida', bx + bw / 2, fy, COL.port, sz, 'center');
+  if (hangarAvviso > 0) {
+    ctx.fillStyle = 'rgba(255,90,90,' + Math.min(1, hangarAvviso) + ')'; ctx.font = mono(sz + 1, true); ctx.textAlign = 'center';
+    ctx.fillText('Nave non disponibile: scegli il Mulo o il Destriero', bx + bw / 2, fy - 22);
+  }
+}
+
 function drawOverlays() {
+  if (mode === 'hangar') { drawHangar(); return; }
   if (mode === 'help') {
     const pg = HELP[helpPage];
     overlay([...pg.l, ['', T_], [(helpPage < HELP.length - 1 ? 'INVIO o →: avanti' : 'INVIO: chiudi') + '    ←: indietro    H o Esc: chiudi'
@@ -1425,24 +1721,19 @@ function drawOverlays() {
   } else if (mode === 'menu') {
     overlay([
       ['COSA DEVI FARE', O_],
-      ['Porta la nave a uno dei due portelloni con l\'anello luminoso verde e agganciala.', T_],
-      ['È necessario rispettare quattro parametri (tieni sotto controllo i valori limite nel pannello a destra):', T_],
+      ["Agganciati alla stazione spaziale. Inserisci la parte frontale della nave in uno dei due portelloni con l'anello luminoso verde.", T_],
+      ["Per non danneggiare l'astronave è necessario rispettare quattro parametri (tieni sotto controllo i valori limite nel pannello a destra):", T_],
       ['  1  velocità:      avvicinamento al portellone < 1,2 m/s', D_],
       ['  2  scivolamento:  velocità di lato rispetto al portellone < 0,8 m/s', D_],
       ['  3  allineamento:  asse della nave parallelo all\'asse del portellone (errore < 12 gradi)', D_],
       ['  4  rotazione:     sincrona rispetto alla stazione < 0,12 rad/s', D_],
-      ["Se non rispetti i parametri d'arrivo rimbalzi e perdi integrità dello scafo.", T_],
+      ["Se all'arrivo non sei entro i limiti, rimbalzerai danneggiando lo scafo.", T_],
       ['', T_],
       ['COMANDI', O_],
-      ['  ↑ / ↓   (o W / S)        spinta avanti / indietro', T_],
-      ['  ← / →   (o A / D)        ruota la nave', T_],
-      ['  Q / E                    spinta laterale sinistra / destra', T_],
-      ['  SHIFT + un altro tasto   stesso comando ma al 30% della forza', T_],
-      ['                           (es. SHIFT + S = frenata leggera)', D_],
-      ['  P                        cambia gli aiuti visivi', T_],
-      ['  INVIO                    ricomincia il tentativo', T_],
-      ['  M                        torna al menu', T_],
-      ['  N                        suoni si / no', T_],
+      ...[['↑ / ↓   (o W / S)', 'spinta avanti / indietro'], ['← / →   (o A / D)', 'ruota la nave'], ['Q / E', 'spinta laterale sinistra / destra'],
+          ['SHIFT + [tasto di movimento]', 'limita il comando al 30% della potenza base'], ['', '(es. SHIFT + S = frenata leggera)'],
+          ['P', 'cambia gli aiuti visivi'], ['INVIO', 'ricomincia il tentativo'], ['M', 'torna al menu'], ['N', 'suoni si / no']]
+        .map(([k, d]) => ['  ' + k.padEnd(30) + d, d.startsWith('(es.') ? D_ : T_]),
       ['', T_],
       ['OPZIONI  seleziona il numero per cambiarle', O_],
       [null, null, { opt: { n: '1', label: 'Ferma automaticamente la rotazione della nave', values: ['si', 'no'], sel: opts.assist ? 0 : 1 } }],
@@ -1451,11 +1742,11 @@ function drawOverlays() {
       [null, null, { opt: { n: '4', label: 'Aiuti visivi', values: AIDS_NAMES, sel: aids } }],
       [null, null, { opt: { n: '5', label: 'Suoni (N anche in gioco)', values: ['si', 'no'], sel: opts.sound ? 0 : 1 } }],
       ['', T_],
-      ['H  guida in 5 pagine (comandi, SHIFT, stabilizzatore, aiuti)', B_],
+      ['H  guida in 7 pagine (comandi, stabilizzatore, aiuti, pannello, navi)', B_],
       ...(LOG_ON ? [['Test: raccoglie dati anonimi di gioco, nessun dato personale.', D_]]
                  : LOCALE ? [['ANTEPRIMA LOCALE: i dati di gioco non vengono inviati.', COL.warn]] : []),
       ['', T_],
-      ['Premi INVIO per iniziare', O_, { center: true }],
+      ['Premi INVIO per scegliere la nave', O_, { center: true }],
     ], 'SPACE TRUCKER  -  docking', N_);
   } else if (mode === 'done') {
     if (S.boom && S.clock - S.boom.t0 < P.pannelloDopoEsplosione) return;                   // dopo la distruzione il pannello compare a esplosione quasi finita
@@ -1552,7 +1843,7 @@ function render() {
   drawDebug();
   ctx.restore();
   text('Space Trucker prototipo docking  v' + VERSION, 12, H - 12, 'rgba(160,180,200,0.55)', 11);
-  if (mode === 'run' && down('ShiftLeft', 'ShiftRight')) text('CONTROLLO FINE  30%', (W - PANEL) / 2, 70, COL.warn, 14, 'center');
+  if (mode === 'run' && down('ShiftLeft', 'ShiftRight')) text('CONTROLLO DI PRECISIONE  30%', (W - PANEL) / 2, 70, COL.warn, 14, 'center');
   if (logNote.t > 0) text(logNote.text, 12, H - 28, 'rgba(107,255,154,' + Math.min(1, logNote.t) * 0.8 + ')', 11);
   drawHud(); drawOverlays();
 }
@@ -1568,6 +1859,7 @@ function frame(now) {
   if (S.flash > 0) S.flash -= dt * 2;
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   if (logNote.t > 0) logNote.t -= dt;
+  if (hangarAvviso > 0) hangarAvviso -= dt;
   updateCam(dt, false);
   sndUpdate();
   render();
