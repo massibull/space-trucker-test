@@ -71,7 +71,7 @@
     <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
     <button id="parti" class="go" disabled>programma la partenza</button>
     <div id="stato" class="small" style="margin-top:6px"></div>
-    <div class="small" style="margin-top:18px;border-top:1px solid #1d3347;padding-top:8px">Prototipo di prova, build del 30 ottobre 2026. Non è il gioco finale: i valori delle navi sono provvisori. Questa pagina non registra né invia alcun dato.</div>
+    <div class="small" style="margin-top:18px;border-top:1px solid #1d3347;padding-top:8px">Prototipo di prova, build 2 del 30 ottobre 2026. Non è il gioco finale: i valori delle navi sono provvisori. Questa pagina non registra né invia alcun dato.</div>
   </div>
 </div>
 <script>
@@ -108,6 +108,8 @@
   const ALTRI = [
     ASTEROIDE('cerere', 'Cerere', 2.7675, 0.0758, 1681.6, 153.9, 20, 62.6, 470, '#c8c8d8'),
     ASTEROIDE('pallade', 'Pallade', 2.7724, 0.2313, 1686.0, 123.1, 200, 14.0, 256, '#b8c8b8'),
+    ASTEROIDE('vesta', 'Vesta', 2.3615, 0.0887, 1325.5, 254.6, 40, 17.29, 262, '#c8b8a8'),
+    ASTEROIDE('igea', 'Igea', 3.1415, 0.1146, 2034.0, 235.5, 300, 5.8, 217, '#a8b8c8'),
   ];
   const CORPI = PIANETI.concat(ALTRI);
   const per_id = {}; CORPI.forEach(c => per_id[c.id] = c);
@@ -116,7 +118,7 @@
   const LUNA = (id, nome, parent, a_km, periodo, fase) => ({ id, nome, parent, a: a_km, periodo, fase });
   const LUNE = [
     LUNA('luna', 'Luna', 'terra', 384400, 27.3217, 40),
-    LUNA('fobos', 'Fobos', 'marte', 9376, 0.31891, 10), LUNA('deimos', 'Deimos', 'marte', 23463, 1.26244, 130),
+    LUNA('fobos', 'Fobos', 'marte', 9376, 0.31891, 10),
     LUNA('io', 'Io', 'giove', 421800, 1.769138, 0), LUNA('europa', 'Europa', 'giove', 671100, 3.551181, 90),
     LUNA('ganimede', 'Ganimede', 'giove', 1070400, 7.154553, 200), LUNA('callisto', 'Callisto', 'giove', 1882700, 16.689018, 300),
     LUNA('titano', 'Titano', 'saturno', 1221870, 15.945421, 60), LUNA('tritone', 'Tritone', 'nettuno', 354759, -5.876854, 150),
@@ -124,7 +126,7 @@
   ];
 
   // Porti (come nel gioco in Python): pianeta/luna -> nome del porto
-  const PORTI = { mercurio: 'Caloris', venere: 'Afrodite', luna: 'Luna', marte: 'Ares', cerere: 'Cerere', pallade: 'Pallade', ganimede: 'Ganimede', titano: 'Titano', tritone: 'Tritone' };
+  const PORTI = { mercurio: 'Caloris', venere: 'Afrodite', terra: 'Terra', luna: 'Luna', marte: 'Ares', fobos: 'Fobos', vesta: 'Vesta', cerere: 'Cerere', igea: 'Igea', pallade: 'Pallade', ganimede: 'Ganimede', titano: 'Titano', tritone: 'Tritone' };
 
   // Posizione e velocita' eliocentriche (km, km/s) al tempo t (giorni dal J2000)
   function stato(c, t) {
@@ -244,8 +246,9 @@
   function propellente(dvKms, nave = NAVE_PROVA) { const t = (nave.secca + nave.carico) * (Math.exp(dvKms / MOTORI[nave.motore].ve) - 1); return { t, frac: t / nave.serbatoio }; }
 
   // Griglia "porkchop": partenza x durata -> velocita' d'eccesso totale. Si calcola a colonne e a pezzi, cosi' la pagina non si blocca.
-  function grigliaInit(orig, dest, t0, nD = 96, nT = 64, fMin = 0.3) {
-    const sin = sinodico(orig, dest), H = Math.max(420, Math.min(2.4 * sin, 2400)), hh = hohmann(orig, dest);
+  function grigliaInit(orig, dest, t0, nD = 0, nT = 64, fMin = 0.3) {
+    const sin = sinodico(orig, dest), H = Math.max(420, Math.min(2.4 * sin, 9000)), hh = hohmann(orig, dest);
+    if (!nD) nD = Math.min(360, Math.max(96, Math.round(H / 24)));                      // una colonna ogni ~24 giorni, al massimo 360
     return { orig, dest, nD, nT, celle: new Float32Array(nD * nT).fill(NaN), t0, H, tmin: Math.max(5, fMin * hh), tmax: 1.9 * hh, fatto: 0, best: null };
   }
   // calcola colonne finche' non passano 'ms' millisecondi; ritorna true quando ha finito
@@ -284,16 +287,18 @@
 const O = Orbite, DAY = O.DAY, AU = O.AU, cv = document.getElementById('map'), ctx = cv.getContext('2d');
 const pk = document.getElementById('pork'), pctx = pk.getContext('2d');
 const $ = id => document.getElementById(id);
+const ROCCE = ['vesta', 'cerere', 'igea', 'pallade'];
+const RC = { vesta: '#1f9bbb', cerere: '#a98a14', igea: '#4fa84a', pallade: '#8d62d4' };       // colore di ogni roccia della fascia
 const dest_ok = O.CORPI.filter(c => c.tipo === 'pianeta');
-const ZONE = [['Sistema interno', ['mercurio', 'venere', 'terra', 'marte']], ['Fascia degli asteroidi (stazioni)', ['cerere', 'pallade']], ['Oltre la fascia', ['giove', 'saturno', 'urano', 'nettuno', 'plutone']]];
+const ZONE = [['Sistema interno', ['mercurio', 'venere', 'terra', 'marte']], ['Fascia degli asteroidi (stazioni)', ['vesta', 'cerere', 'igea', 'pallade']], ['Oltre la fascia', ['giove', 'saturno', 'urano', 'nettuno', 'plutone']]];
 for (const id of ['orig', 'dest']) ZONE.forEach(([nome, ids]) => { const og = document.createElement('optgroup'); og.label = nome;
-  ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + (O.PORTI[c.id] ? '  (' + (i === 'cerere' || i === 'pallade' ? 'stazione ' : 'porto ') + O.PORTI[c.id] + ')' : ''), c.id); og.appendChild(op); });
+  ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + (O.PORTI[c.id] ? '  (' + (ROCCE.includes(i) ? 'stazione ' : 'porto ') + O.PORTI[c.id] + ')' : ''), c.id); og.appendChild(op); });
   $(id).appendChild(og); });
 $('orig').value = 'terra'; $('dest').value = 'marte';
 
 let t = O.giorni(2412, 1, 1), speed = 1, paused = false, W = 1, H = 1, dpr = 1;
 let view = { follow: null, cx: 0, cy: 0, scale: 120 / AU, nome: 'interno' };
-const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], terra: ['Terra e Luna', 'terra', 6e-5], marte: ['Marte, Fobos e Deimos', 'marte', 6e-5],
+const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], terra: ['Terra e Luna', 'terra', 6e-5], marte: ['Marte e Fobos', 'marte', 6e-5],
   giove: ['Giove e le sue lune', 'giove', 3.2e-5], saturno: ['Saturno e Titano', 'saturno', 4.5e-5], nettuno: ['Nettuno e Tritone', 'nettuno', 6e-5], plutone: ['Plutone e Caronte', 'plutone', 6e-5] };
 for (const k in VIEWS) $('view').add(new Option(VIEWS[k][0], k));
 function setView(k) { const v = VIEWS[k]; view.follow = v[1]; view.scale = v[2]; view.cx = 0; view.cy = 0; $('view').value = k; }
@@ -527,7 +532,7 @@ function paAnelli(S, parte, alpha, raggi, tilt = -0.3, piatto = 0.3) {
   for (const rr of raggi) { ctx.save(); ctx.translate(S.x, S.y); ctx.rotate(tilt); ctx.scale(1, piatto); ctx.strokeStyle = `rgba(${parte === 'davanti' ? '191,234,255' : '127,231,255'},${alpha})`; ctx.lineWidth = Math.max(0.5, 0.8 / piatto * 0.55); ctx.beginPath();
     if (parte === 'dietro') ctx.arc(0, 0, rr * S.r, Math.PI, 2 * Math.PI); else ctx.arc(0, 0, rr * S.r, 0, Math.PI); ctx.stroke(); ctx.restore(); }
 }
-const CRATERI = { mercurio: [[-30,20,10],[10,-15,12],[50,30,8],[-60,-30,9],[30,5,7],[75,-10,8],[-10,45,9]], cerere: [[-20,15,14],[30,-20,10],[60,25,9],[0,-40,12],[-50,-5,8]], pallade: [[-30,10,12],[25,-15,14],[55,20,8],[0,35,9]] };
+const CRATERI = { vesta: [[-25,15,13],[30,-20,11],[50,25,8],[0,-45,10]], igea: [[-30,10,12],[25,-15,10],[55,20,8]], mercurio: [[-30,20,10],[10,-15,12],[50,30,8],[-60,-30,9],[30,5,7],[75,-10,8],[-10,45,9]], cerere: [[-20,15,14],[30,-20,10],[60,25,9],[0,-40,12],[-50,-5,8]], pallade: [[-30,10,12],[25,-15,14],[55,20,8],[0,35,9]] };
 function disegnaPianeta(c, x, y, r, verso) {
   const id = c.id, S = { x, y, r, l0: 0, f0: 10 }, [l0, f0] = VISTA_PIANETA[id] || [0, 10]; S.l0 = l0; S.f0 = f0;
   const luna = id.startsWith('luna-'), L = Math.hypot(verso[0], verso[1]) || 1, lx = verso[0] / L, ly = verso[1] / L;
@@ -611,8 +616,8 @@ function disegna() {
   // orbite dei pianeti
   ctx.lineWidth = 1;
   for (const c of O.CORPI) {
-    const pts = O.orbitaVista(c, t, view.scale, Math.max(W, H)); ctx.strokeStyle = '#17304a'; ctx.beginPath();
-    pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke();
+    const pts = O.orbitaVista(c, t, view.scale, Math.max(W, H)); ctx.strokeStyle = RC[c.id] || '#17304a'; ctx.globalAlpha = RC[c.id] ? 0.55 : 1; ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.globalAlpha = 1;
   }
   // traiettoria pianificata
   if (sel) { const q = [], n = 160; for (let i = 0; i <= n; i++) { const s = O.propaga(sel.r1, sel.v1, sel.tof * DAY * i / n); q.push(s.r); }
@@ -630,22 +635,23 @@ function disegna() {
   for (const c of O.CORPI) {
     const s0 = O.stato(c, t), x = sx(s0.x), y = sy(s0.y); if (x < -120 || x > W + 120 || y < -120 || y > H + 120) continue;
     const rBase = 22 * Math.pow(c.R / 6371, 0.3), rr = Math.min(72, Math.max(rBase * kz, c.R * view.scale)), porto = O.PORTI[c.id];
-    const roccia = c.id === 'cerere' || c.id === 'pallade';
+    const roccia = ROCCE.includes(c.id);
     if (roccia) disegnaRoccia(c, x, y, rr, [sx(0) - x, sy(0) - y]); else disegnaPianeta(c, x, y, rr, [sx(0) - x, sy(0) - y]);
     const rAnelli = c.id === 'saturno' ? rr * 2.3 : rr;
     if (porto) { if (roccia) disegnaStazione(x, y, rr); else { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(x, y, rr + 5, 0, 7); ctx.stroke(); } }
-    ctx.fillStyle = '#9fb4c8'; ctx.fillText(c.nome + (c.fasefittizia ? '*' : ''), x + rAnelli + 8, y + 4);
-    if (roccia) { ctx.fillStyle = '#6f8aa0'; ctx.fillText(c.id === 'cerere' ? 'pianeta nano' : 'asteroide', x + rAnelli + 8, y + 16); }
+    ctx.fillStyle = RC[c.id] || '#9fb4c8'; ctx.fillText(c.nome + (c.fasefittizia ? '*' : ''), x + rAnelli + 8, y + 4);
+    if (roccia) { ctx.fillStyle = '#6f8aa0'; ctx.fillText(c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', x + rAnelli + 8, y + 16); }
     if (porto && (roccia || view.scale > 6e-7)) { ctx.fillStyle = '#6bff9a'; ctx.fillText((roccia ? '◎ stazione ' : '◎ porto ') + porto, x + rAnelli + 8, y + (roccia ? 28 : 17)); }
     if (!mostraLune) continue;
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
       const veraPx = l.a * view.scale, minPx = Math.max(rr, rAnelli * 0.9) + 13 + 10 * i, orbPx = Math.max(veraPx, minPx); if (orbPx > veraPx * 1.05) ingrandita = true;
-      const ang = (l.fase + 360 * t / l.periodo) * O.DEG, lx = x + orbPx * Math.cos(ang), ly = y - orbPx * Math.sin(ang), rl = Math.min(8, 2.4 + 0.1 * rr);
+      const rapida = !paused && speed / Math.abs(l.periodo) > 1.2;                                  // piu' di un giro ogni 0,8 secondi: la luna non si segue a occhio
+      const ang = (l.fase + (rapida ? 0 : 360 * t / l.periodo)) * O.DEG, lx = x + orbPx * Math.cos(ang), ly = y - orbPx * Math.sin(ang), rl = Math.min(8, 2.4 + 0.1 * rr);
       ctx.strokeStyle = '#17304a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, orbPx, 0, 7); ctx.stroke();
-      disegnaPianeta({ id: 'luna-' + l.id, col: '#c9c6bd' }, lx, ly, rl, [x - lx, y - ly]);
+      ctx.globalAlpha = rapida ? 0.35 : 1; disegnaPianeta({ id: 'luna-' + l.id, col: '#c9c6bd' }, lx, ly, rl, [x - lx, y - ly]); ctx.globalAlpha = 1;
       if (O.PORTI[l.id]) { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(lx, ly, rl + 4, 0, 7); ctx.stroke(); }
-      if (lungheLune) { ctx.fillStyle = '#7f98ae'; ctx.fillText(l.nome, lx + rl + 7, ly + 3); if (O.PORTI[l.id]) { ctx.fillStyle = '#6bff9a'; ctx.fillText('◎ porto ' + O.PORTI[l.id], lx + rl + 7, ly + 16); } }
+      if (lungheLune) { ctx.fillStyle = '#7f98ae'; ctx.fillText(l.nome + (rapida ? ' (orbita rapida)' : ''), lx + rl + 7, ly + 3); if (O.PORTI[l.id]) { ctx.fillStyle = '#6bff9a'; ctx.fillText('◎ porto ' + O.PORTI[l.id], lx + rl + 7, ly + 16); } }
     });
   }
   // posizioni dei corpi alla partenza e all'arrivo del piano scelto
