@@ -71,7 +71,7 @@
     <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
     <button id="parti" class="go" disabled>programma la partenza</button>
     <div id="stato" class="small" style="margin-top:6px"></div>
-    <div class="small" style="margin-top:18px;border-top:1px solid #1d3347;padding-top:8px">Prototipo di prova, build 2 del 30 ottobre 2026. Non è il gioco finale: i valori delle navi sono provvisori. Questa pagina non registra né invia alcun dato.</div>
+    <div class="small" style="margin-top:18px;border-top:1px solid #1d3347;padding-top:8px">Prototipo di prova, build 3 del 30 ottobre 2026. Non è il gioco finale: i valori delle navi sono provvisori. Questa pagina non registra né invia alcun dato.</div>
   </div>
 </div>
 <script>
@@ -296,6 +296,16 @@ for (const id of ['orig', 'dest']) ZONE.forEach(([nome, ids]) => { const og = do
   $(id).appendChild(og); });
 $('orig').value = 'terra'; $('dest').value = 'marte';
 
+// Velocita' effettiva del tempo: avvicinandosi a un pianeta con lune il tempo si rallenta da solo, fino a far fare alla luna piu' veloce
+// al massimo un giro ogni 1,25 secondi. Lontano dai pianeti vale la velocita' scelta con i pulsanti. Passaggio graduale con lo zoom.
+function velEffettiva() {
+  if (!view.follow) return speed;
+  const lune = O.LUNE.filter(l => l.parent === view.follow); if (!lune.length) return speed;
+  const tetto = 0.8 * Math.min(...lune.map(l => Math.abs(l.periodo)));
+  if (speed <= tetto) return speed;
+  const k = Math.max(0, Math.min(1, (Math.log(view.scale) - Math.log(1.2e-5)) / (Math.log(6e-5) - Math.log(1.2e-5))));        // 0 = lontano, 1 = inquadrato
+  return Math.exp((1 - k) * Math.log(speed) + k * Math.log(tetto));
+}
 let t = O.giorni(2412, 1, 1), speed = 1, paused = false, W = 1, H = 1, dpr = 1;
 let view = { follow: null, cx: 0, cy: 0, scale: 120 / AU, nome: 'interno' };
 const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], terra: ['Terra e Luna', 'terra', 6e-5], marte: ['Marte e Fobos', 'marte', 6e-5],
@@ -646,7 +656,7 @@ function disegna() {
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
       const veraPx = l.a * view.scale, minPx = Math.max(rr, rAnelli * 0.9) + 13 + 10 * i, orbPx = Math.max(veraPx, minPx); if (orbPx > veraPx * 1.05) ingrandita = true;
-      const rapida = !paused && speed / Math.abs(l.periodo) > 1.2;                                  // piu' di un giro ogni 0,8 secondi: la luna non si segue a occhio
+      const rapida = !paused && velEffettiva() / Math.abs(l.periodo) > 1.2;                                  // piu' di un giro ogni 0,8 secondi: la luna non si segue a occhio
       const ang = (l.fase + (rapida ? 0 : 360 * t / l.periodo)) * O.DEG, lx = x + orbPx * Math.cos(ang), ly = y - orbPx * Math.sin(ang), rl = Math.min(8, 2.4 + 0.1 * rr);
       ctx.strokeStyle = '#17304a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, orbPx, 0, 7); ctx.stroke();
       ctx.globalAlpha = rapida ? 0.35 : 1; disegnaPianeta({ id: 'luna-' + l.id, col: '#c9c6bd' }, lx, ly, rl, [x - lx, y - ly]); ctx.globalAlpha = 1;
@@ -675,13 +685,13 @@ function disegna() {
   const lenKm = Math.pow(10, Math.floor(Math.log10(100 / view.scale))), lp = lenKm * view.scale; ctx.strokeStyle = '#7f98ae';
   ctx.beginPath(); ctx.moveTo(W - 20 - lp, H - 50); ctx.lineTo(W - 20, H - 50); ctx.stroke();
   ctx.fillText(lenKm >= AU * 0.5 ? f1(lenKm / AU, lenKm / AU < 1 ? 1 : 0) + ' UA' : (lenKm >= 1e6 ? lenKm / 1e6 + ' milioni km' : lenKm + ' km'), W - 20, H - 56);
-  $('hud').innerHTML = `${gg(t)}  <span class="small">(${speed >= 1 && !paused ? speed + ' giorni al secondo' : 'in pausa'})</span><br><span class="small">* fase iniziale scelta dal gioco · cerchio verde ◎ = spazioporto (con il suo nome) · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
+  $('hud').innerHTML = `${gg(t)}  <span class="small">(${paused ? 'in pausa' : (() => { const v = velEffettiva(); return v >= 0.95 * speed ? speed + ' giorni al secondo' : (v >= 1 ? v.toFixed(1).replace('.', ',') + ' giorni al secondo' : (v * 24).toFixed(1).replace('.', ',') + ' ore al secondo') + ' · rallentato per seguire le lune'; })()})</span><br><span class="small">* fase iniziale scelta dal gioco · cerchio verde ◎ = spazioporto (con il suo nome) · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
 }
 let last = performance.now();
 setInterval(posSlider, 60);
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (!paused) t += speed * dt; aggiornaAnim(now); disegna(); requestAnimationFrame(frame);
+  if (!paused) t += velEffettiva() * dt; aggiornaAnim(now); disegna(); requestAnimationFrame(frame);
 }
 agg(); setView('interno'); requestAnimationFrame(frame);
 cercaFinestre();
