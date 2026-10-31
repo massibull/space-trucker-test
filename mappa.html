@@ -44,34 +44,66 @@
   #ztrack::after{content:'';position:absolute;left:50%;top:3px;bottom:4px;width:9px;transform:translateX(-50%);background:repeating-linear-gradient(to bottom,rgba(127,231,255,.55) 0 1px,transparent 1px calc((100% - 1px)/6))}
   #zknob{position:absolute;left:50%;transform:translateX(-50%);width:17px;height:7px;box-sizing:border-box;border:1px solid #bfeaff;background:#05070d;top:0;pointer-events:none}
   #zoom.attivo #zknob{box-shadow:0 0 6px #7fe7ff}
+  #bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  #tempoUI{display:flex;align-items:center;gap:8px;background:rgba(8,17,26,.82);border:1px solid #27455f;padding:4px 8px}
+  #velSl{width:200px;accent-color:#7fe7ff} #velSl:disabled{opacity:.4}
+  #velEt{min-width:150px;color:#bfeaff} #velPresets button{padding:2px 6px;font-size:11px;margin:0 1px}
+  #banner{position:absolute;left:50%;top:64px;transform:translateX(-50%);min-width:420px;max-width:80%;background:rgba(10,22,32,.96);border:2px solid #ffb347;padding:12px 18px;text-align:center;box-shadow:0 0 24px rgba(255,179,71,.35);z-index:5}
+  #banner.rit{border-color:#ff6a6a;box-shadow:0 0 24px rgba(255,106,106,.45)}
+  #banTit{font-size:13px;color:#ffd37a;letter-spacing:.06em} #banConto{font-size:40px;font-weight:700;color:#fff;margin:4px 0} #banSub{font-size:11px;color:#9fb4c8;margin-bottom:8px}
+  #banBtn{font-size:15px;padding:8px 22px;background:#1e6b3a;border-color:#6bff9a;color:#fff}
+  #banBtn:disabled{background:#16202b;border-color:#27455f;color:#6f8aa0}
+  #toast{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);max-width:70%;background:rgba(10,22,32,.96);border:1px solid #7fe7ff;padding:10px 16px;z-index:5;line-height:1.5}
+  #modalAss{position:absolute;inset:0;background:rgba(5,7,13,.78);display:flex;align-items:center;justify-content:center;z-index:9}
+  #modalAss>div{background:#0b1722;border:1px solid #ffb347;padding:18px 22px;max-width:520px;line-height:1.6}
+  #cal{position:absolute;left:0;right:0;bottom:48px;height:318px;background:rgba(8,17,26,.97);border-top:1px solid #27455f;z-index:4}
+  #cal canvas{width:100%;height:100%;display:block;cursor:pointer} #calChiudi{position:absolute;right:8px;top:6px;z-index:2}
+  .pren{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:5px 0;line-height:1.5}
+  .pren.fine{opacity:.6;border-color:#1d2a38} .pren.att{border-color:#ffb347}
+  .pren .t{color:#e6eef5;font-size:12.5px} .pren .s{color:#9fb4c8;font-size:11px} .pren button{padding:3px 10px;margin:4px 6px 0 0;font-size:11.5px}
+  .pren button.ok{background:#1e6b3a;border-color:#6bff9a;color:#fff} .pren button:disabled{opacity:.5}
+  #regTxt{white-space:pre-wrap;font-size:10px;color:#9fb4c8;max-height:220px;overflow:auto;margin:6px 0;background:#070d14;padding:6px}
+  .nota{margin-top:16px;border-top:1px solid #1d3347;padding-top:8px}
 </style></head><body>
 <div id="app">
   <div id="mapw"><canvas id="map"></canvas><div id="hud"></div>
     <div id="zoom"><button id="zin" title="avvicina (tasto +)"></button><div id="ztrack"><div id="zknob"></div></div><button id="zout" title="allontana (tasto -)"></button></div>
+    <div id="banner" hidden><div id="banTit"></div><div id="banConto"></div><div id="banSub"></div><button id="banBtn">Parti</button></div>
+    <div id="toast" hidden></div>
+    <div id="cal" hidden><button id="calChiudi">chiudi</button><canvas id="calcv"></canvas></div>
     <div id="bar">
-      <button id="pause">⏸ pausa</button>
-      <span id="speeds"></span>
-      <span style="margin-left:10px"></span>
+      <span id="tempoUI"><span id="velEt"></span><input type="range" id="velSl" min="0" max="1000" value="0"><span id="velPresets"></span></span>
+      <button id="btnCal">Calendario finestre</button>
       <select id="view" style="width:auto;display:inline-block"></select>
     </div></div>
   <div id="panel">
-    <h1>SPACE TRUCKER · C1 pianificatore</h1>
-    <h2>VIAGGIO</h2>
-    <label>partenza</label><select id="orig"></select>
-    <label>arrivo</label><select id="dest"></select>
-    <label>nave</label><select id="nave"></select>
-    <div class="small" id="naveInfo" style="margin-top:3px"></div>
-    <label>cerca finestre a partire dal (AAAA-MM-GG)</label><input id="date" value="2412-01-01">
-    <button id="cerca" style="width:100%;margin-top:6px">cerca finestre di lancio</button>
-    <h2>FINESTRE DI LANCIO</h2>
-    <canvas id="pork" width="342" height="256"></canvas>
-    <div id="legenda" class="small" style="display:flex;align-items:center;gap:6px;margin-top:3px"><span id="lg0"></span><span style="flex:1;height:7px;background:linear-gradient(90deg,hsl(120,80%,52%),hsl(60,80%,45%),hsl(0,80%,30%))"></span><span id="lg1"></span></div>
-    <div id="hov" class="small" style="min-height:2.8em;margin-top:4px">Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.</div>
-    <div id="finestre" class="small" style="margin-top:6px">…</div>
-    <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
-    <button id="parti" class="go" disabled>programma la partenza</button>
-    <div id="stato" class="small" style="margin-top:6px"></div>
-    <div class="small" style="margin-top:18px;border-top:1px solid #1d3347;padding-top:8px">Prototipo di prova, build 3 del 30 ottobre 2026. Non è il gioco finale: i valori delle navi sono provvisori. Questa pagina non registra né invia alcun dato.</div>
+    <h1>SPACE TRUCKER · pianificatore</h1>
+    <h2>VIAGGI PRENOTATI <span id="npren" class="small"></span></h2>
+    <div id="listaPren" class="small">Nessun viaggio prenotato.</div>
+    <button id="apriPian" class="go">Pianifica viaggio</button>
+    <div id="pianifica" hidden>
+      <h2>VIAGGIO</h2>
+      <div class="small">Durante la pianificazione il tempo scorre a velocità reale.</div>
+      <label>partenza</label><select id="orig"></select>
+      <label>arrivo</label><select id="dest"></select>
+      <label>nave</label><select id="nave"></select>
+      <div class="small" id="naveInfo" style="margin-top:3px"></div>
+      <button id="cerca" style="width:100%;margin-top:6px">Cerca finestra</button>
+      <h2>FINESTRE DI LANCIO</h2>
+      <canvas id="pork" width="342" height="256"></canvas>
+      <div id="legenda" class="small" style="display:flex;align-items:center;gap:6px;margin-top:3px"><span id="lg0"></span><span style="flex:1;height:7px;background:linear-gradient(90deg,hsl(120,80%,52%),hsl(60,80%,45%),hsl(0,80%,30%))"></span><span id="lg1"></span></div>
+      <div id="hov" class="small" style="min-height:2.8em;margin-top:4px">Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.</div>
+      <div id="finestre" class="small" style="margin-top:6px">…</div>
+      <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
+      <button id="parti" class="go" disabled>Prenota il lancio</button>
+      <button id="annullaPian" style="width:100%;margin-top:6px">Annulla la pianificazione</button>
+      <div id="stato" class="small" style="margin-top:6px"></div>
+    </div>
+    <details id="regDet" style="margin-top:14px"><summary>Registro della sessione</summary>
+      <div id="regSint" class="small" style="margin-top:6px"></div><pre id="regTxt"></pre>
+      <button id="regCopia">Copia il registro</button> <button id="nuovaProva">Nuova prova</button>
+    </details>
+        <div class="small nota">Prototipo di prova, build 6 del 31 ottobre 2026. Non è il gioco finale: i valori delle navi, dei costi e delle penali sono provvisori. Il progresso è salvato nel tuo browser. La prova registra dati di utilizzo anonimi (azioni nella mappa, nessun dato personale) per capire come viene usata.</div>
   </div>
 </div>
 <script>
@@ -100,16 +132,16 @@
     P('plutone', 'Plutone', 39.48211675, -0.00031596, 0.24882730, 0.00005170, 238.92903833, 145.20780515, 224.06891629, -0.04062942, 869.6, 1188, '#c9b8a8', 2.5),
   ];
   let K_SERVIZIO = 10;                                                                                        // orbite di servizio (dove stanno i porti): apoastro = K x periastro (periastro = 1,1 raggi)
-  // Asteroidi/pianeti nani: forma reale (a, e, periodo, perielio); la FASE iniziale e' scelta dal gioco, non e' quella reale.
+  // Asteroidi/pianeti nani (fasi iniziali di Vesta, Cerere e Igea scelte con strumenti/analisi/posiziona_stazioni.js: finestre vicine e sfalsate nei primi anni): forma reale (a, e, periodo, perielio); la FASE iniziale e' scelta dal gioco, non e' quella reale.
   const ASTEROIDE = (id, nome, a, e, periodoGiorni, w, fase, mu, R, col) => {
     const n = 360 / periodoGiorni * 36525;              // gradi per secolo
     return { id, nome, tipo: 'pianeta', a0: a, aR: 0, e0: e, eR: 0, L0: fase + w, LR: n + 0, w0: w, wR: 0, mu, R, col, r: 2, fasefittizia: true };
   };
   const ALTRI = [
-    ASTEROIDE('cerere', 'Cerere', 2.7675, 0.0758, 1681.6, 153.9, 20, 62.6, 470, '#c8c8d8'),
+    ASTEROIDE('cerere', 'Cerere', 2.7675, 0.0758, 1681.6, 153.9, 240, 62.6, 470, '#c8c8d8'),
     ASTEROIDE('pallade', 'Pallade', 2.7724, 0.2313, 1686.0, 123.1, 200, 14.0, 256, '#b8c8b8'),
-    ASTEROIDE('vesta', 'Vesta', 2.3615, 0.0887, 1325.5, 254.6, 40, 17.29, 262, '#c8b8a8'),
-    ASTEROIDE('igea', 'Igea', 3.1415, 0.1146, 2034.0, 235.5, 300, 5.8, 217, '#a8b8c8'),
+    ASTEROIDE('vesta', 'Vesta', 2.3615, 0.0887, 1325.5, 254.6, 80, 17.29, 262, '#c8b8a8'),
+    ASTEROIDE('igea', 'Igea', 3.1415, 0.1146, 2034.0, 235.5, 0, 5.8, 217, '#a8b8c8'),
   ];
   const CORPI = PIANETI.concat(ALTRI);
   const per_id = {}; CORPI.forEach(c => per_id[c.id] = c);
@@ -239,15 +271,17 @@
   // Flotta di prova (valori PROVVISORI, tonnellate). Ogni nave ha un nome proprio, una classe e il suo motore; la classe e' il progetto, la nave e' l'esemplare.
   const FLOTTA = {
     rocinante: { id: 'rocinante', nome: 'Rocinante', classe: 'Destriero', motore: 'nucleare', secca: 6, carico: 2, serbatoio: 14 },
+    baio: { id: 'baio', nome: 'Baio', classe: 'Destriero', motore: 'chimico', secca: 6, carico: 2, serbatoio: 18 },
     zoccolo: { id: 'zoccolo', nome: 'Zoccolo', classe: 'Mulo', motore: 'chimico', secca: 8, carico: 8, serbatoio: 45 },
-    tuono: { id: 'tuono', nome: 'Tuono', classe: 'Mulo', motore: 'nucleare', secca: 10, carico: 8, serbatoio: 34 },     // motore nucleare: piu' pesante e serbatoio piu' piccolo (l'idrogeno occupa volume)
+    bardotto: { id: 'bardotto', nome: 'Bardotto', classe: 'Mulo', motore: 'chimico', secca: 8, carico: 6, serbatoio: 40 },
+    tuono: { id: 'tuono', nome: 'Tuono', classe: 'Mulo', motore: 'nucleare', secca: 10, carico: 8, serbatoio: 34 },     // nucleare: piu' pesante e serbatoio piu' piccolo (l'idrogeno occupa volume)
   };
   const NAVE_PROVA = FLOTTA.zoccolo;
   function propellente(dvKms, nave = NAVE_PROVA) { const t = (nave.secca + nave.carico) * (Math.exp(dvKms / MOTORI[nave.motore].ve) - 1); return { t, frac: t / nave.serbatoio }; }
 
   // Griglia "porkchop": partenza x durata -> velocita' d'eccesso totale. Si calcola a colonne e a pezzi, cosi' la pagina non si blocca.
   function grigliaInit(orig, dest, t0, nD = 0, nT = 64, fMin = 0.3) {
-    const sin = sinodico(orig, dest), H = Math.max(420, Math.min(2.4 * sin, 9000)), hh = hohmann(orig, dest);
+    const sin = sinodico(orig, dest), H = Math.max(5 * 365.25, Math.min(2.4 * sin, 25 * 365.25)), hh = hohmann(orig, dest);
     if (!nD) nD = Math.min(360, Math.max(96, Math.round(H / 24)));                      // una colonna ogni ~24 giorni, al massimo 360
     return { orig, dest, nD, nT, celle: new Float32Array(nD * nT).fill(NaN), t0, H, tmin: Math.max(5, fMin * hh), tmax: 1.9 * hh, fatto: 0, best: null };
   }
@@ -284,6 +318,131 @@
 
 </script>
 <script>
+/* SPACE TRUCKER - tempo di gioco, prenotazioni e appuntamenti (logica pura, senza grafica: si prova da sola con un orologio finto).
+   Unita': il tempo di gioco t e' in GIORNI (come nella mappa); la velocita' v e' in SECONDI DI GIOCO PER SECONDO REALE (1 = tempo reale, 86400 = 1 giorno al secondo).
+   Regole: vedi docs/design-tempo.md e docs/piano-mappa-tempo.md. */
+(function (root) {
+  const DAY = 86400, PRE = 30, RIT = 30, CONTO = 10, K = 0.62, STALLO = 2, PASSO = 0.2;
+  const ALONE_D = 5 / 24, MAXPREN = 5, VMAX = 86400;
+  const PRESET = [{ nome: 'tempo reale', v: 1 }, { nome: 'oraria', v: 60 }, { nome: 'giornaliera', v: 1440 }, { nome: 'di gioco', v: 86400 }];
+  const PENALI = { ritardoAlSecondo: 50, partenzaMancata: 5000, arrivoMancato: 2000, annullaMax: 3000 };     // crediti PROVVISORI e inventati
+
+  // Frenata del tempo: velocita' da usare quando mancano R secondi di gioco a un appuntamento, se l'utente va a v.
+  // La legge e' v_eff = min(v, max(1, K*(R-CONTO))): la distanza da CONTO decade in modo esponenziale e gli ultimi CONTO secondi sono a 1:1.
+  function vLegge(R, v) { if (R <= CONTO) return 1; return Math.min(v, Math.max(1, K * (R - CONTO))); }
+  // Secondi REALI che mancano all'appuntamento, a velocita' utente v, con la legge di frenata.
+  function toGo(R, v) {
+    if (R <= 0) return 0; if (v <= 1) return R;
+    const R1 = CONTO + v / K;                                            // da qui in giu' la legge frena
+    const tr = Math.log(v) / K + CONTO + 1 / K;                          // durata della frenata + coda a 1:1
+    if (R >= R1) return (R - R1) / v + tr;
+    const x = R - CONTO; if (x * K <= 1) return R;
+    return Math.log(x * K) / K + CONTO + 1 / K;
+  }
+  const velDaSlider = p => Math.exp(Math.max(0, Math.min(1, p)) * Math.log(VMAX));
+  const sliderDaVel = v => Math.log(Math.max(1, Math.min(VMAX, v))) / Math.log(VMAX);
+  const bucketVel = v => v < 8 ? 'tempo reale' : v < 200 ? 'oraria' : v < 8000 ? 'giornaliera' : 'di gioco';
+
+  class Mondo {
+    constructor(t0) {
+      this.t = t0; this.vel = 1; this.forzato = false; this.tr = 0; this.pren = []; this.log = []; this.seq = 1; this.penali = 0;
+      this.stat = { ricerche: 0, prenotazioni: 0, annullamenti: 0, reazioni: [], mancati: 0, ritardi: 0, velSec: {}, pianifSec: 0, inizioMs: 0 };
+      this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
+    }
+    velUtente() { return this.forzato ? 1 : Math.max(1, Math.min(VMAX, this.vel)); }
+    registra(tipo, dati) { const e = Object.assign({ tr: +this.tr.toFixed(2), t: this.t, tipo }, dati || {}); this.log.push(e); if (this.log.length > 800) this.log.shift(); this.on('log', e); return e; }
+    attivi() { return this.pren.filter(p => ['prenotata', 'in volo', 'in orbita'].includes(p.stato)); }
+    naveImpegnata(id) { return this.attivi().some(p => p.nave === id); }
+    prossimaApp(p) { return p.stato === 'prenotata' ? p.dep : (p.stato === 'in volo' ? p.arr : null); }
+    // velocita' effettiva in questo istante
+    velEffettiva() {
+      let v = this.velUtente();
+      for (const p of this.pren) for (const ap of [p.dep, p.arr]) { if (!ap) continue; if (ap.stato === 'preavviso') v = Math.min(v, vLegge((ap.tEv - this.t) * DAY, ap.vLock)); else if (ap.stato === 'ritardo') v = 1; }       // in ritardo il tempo resta a 1:1
+      return Math.max(1, Math.min(v, this.tetto()));
+    }
+    inPreavviso() { return this.pren.some(p => [p.dep, p.arr].some(ap => ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo'))); }
+    avanza(dtReal) {
+      if (!(dtReal > 0)) return; if (dtReal > STALLO) return this.assenza(dtReal);
+      let rem = dtReal; while (rem > 1e-9) { const dt = Math.min(rem, PASSO); this.passo(dt); rem -= dt; }
+    }
+    passo(dt) {
+      const vu = this.velUtente(); const b = bucketVel(vu); this.stat.velSec[b] = (this.stat.velSec[b] || 0) + dt; if (this.forzato) this.stat.pianifSec += dt;
+      this.tr += dt; this.t += this.velEffettiva() * dt / DAY; this.aggiorna();
+    }
+    aggiorna() {
+      for (const p of this.pren) { if (p.stato === 'prenotata') this.macchina(p, p.dep); if (p.stato === 'in volo') this.macchina(p, p.arr); }
+    }
+    macchina(p, ap) {
+      const R = (ap.tEv - this.t) * DAY, vu = this.velUtente();
+      if (ap.stato === 'attesa') { if (toGo(R, vu) <= PRE) { ap.stato = 'preavviso'; ap.preTr = this.tr; ap.vLock = vu; this.registra('preavviso', { pren: p.id, app: ap.tipo }); this.on('preavviso', p, ap); } }
+      if (ap.stato === 'preavviso' && R <= 0) { if (ap.premuto) this.esito(p, ap, 'riuscito'); else { ap.stato = 'ritardo'; ap.ritTr = this.tr; this.registra('ritardo_inizio', { pren: p.id, app: ap.tipo }); this.on('ritardo', p, ap); } }
+      else if (ap.stato === 'ritardo' && this.tr - ap.ritTr >= RIT) this.esito(p, ap, 'mancato');
+    }
+    premi(id, tipo) {
+      const p = this.pren.find(x => x.id === id); if (!p) return false;
+      if (p.stato === 'in orbita' && tipo === 'arrivo') { this.esitoFinale(p, p.arr, 'riuscito_orbita', 0); return true; }
+      const ap = tipo === 'partenza' ? p.dep : p.arr; if (!ap) return false;
+      if (ap.stato === 'preavviso' && !ap.premuto) { ap.premuto = true; ap.reazione = +(this.tr - ap.preTr).toFixed(2); this.stat.reazioni.push(ap.reazione); this.registra('attivo', { pren: p.id, app: ap.tipo, reazione: ap.reazione }); this.on('attivo', p, ap); return true; }
+      if (ap.stato === 'ritardo') { ap.premuto = true; ap.reazione = +(this.tr - ap.preTr).toFixed(2); this.stat.reazioni.push(ap.reazione); this.registra('attivo', { pren: p.id, app: ap.tipo, reazione: ap.reazione, tardi: true }); this.esito(p, ap, 'riuscito_ritardo'); return true; }
+      return false;
+    }
+    esito(p, ap, e) {
+      ap.stato = e; let ritardoSec = 0, pen = 0;
+      if (e === 'riuscito_ritardo') { ritardoSec = +(this.tr - ap.ritTr).toFixed(1); pen = Math.round(ritardoSec * PENALI.ritardoAlSecondo); this.stat.ritardi++; }
+      if (e === 'mancato') { this.stat.mancati++; pen = ap.tipo === 'partenza' ? PENALI.partenzaMancata : PENALI.arrivoMancato; }
+      this.esitoFinale(p, ap, e, pen, ritardoSec);
+    }
+    esitoFinale(p, ap, e, pen, ritardoSec) {
+      this.penali += pen || 0; ap.pen = pen || 0;
+      if (ap.tipo === 'partenza') p.stato = (e === 'mancato') ? 'mancata' : 'in volo';
+      else p.stato = (e === 'mancato') ? 'in orbita' : 'conclusa';
+      this.vel = 1;                                                                  // dopo un appuntamento il tempo resta a 1:1 finche' il giocatore non lo cambia
+      this.registra('esito', { pren: p.id, app: ap.tipo, esito: e, ritardo: ritardoSec || 0, penale: pen || 0 }); this.on('esito', p, ap, e, pen, ritardoSec);
+    }
+    // ---------------------------------------------------------------- prenotazioni
+    prenota(piano, naveId, info) {
+      if (this.attivi().length >= MAXPREN) return { ok: false, motivo: 'Hai già ' + MAXPREN + ' viaggi prenotati.' };
+      if (this.naveImpegnata(naveId)) return { ok: false, motivo: 'Questa nave è già impegnata.' };
+      if (piano.tDep < this.t + ALONE_D) return { ok: false, motivo: 'Finestra troppo vicina: servono almeno 5 ore di preparazione.' };
+      const id = this.nuovoId++;
+      const mk = (tipo, tEv) => ({ tipo, tEv, stato: 'attesa', premuto: false, reazione: null, preTr: null, ritTr: null, vLock: 1, pen: 0 });
+      const p = Object.assign({ id, nave: naveId, orig: piano.orig.id || piano.orig, dest: piano.dest.id || piano.dest, tDep: piano.tDep, tof: piano.tof, dv: piano.dv, r1: piano.r1, v1: piano.v1, creata: this.t, creataTr: this.tr, stato: 'prenotata', dep: mk('partenza', piano.tDep), arr: mk('arrivo', piano.tDep + piano.tof) }, info || {});
+      this.pren.push(p); this.stat.prenotazioni++; this.registra('prenota', { pren: id, nave: naveId, orig: p.orig, dest: p.dest, anticipo: +(p.tDep - this.t).toFixed(2), tof: Math.round(p.tof), scelta: (info && info.scelta) || '' });
+      return { ok: true, pren: p };
+    }
+    annulla(id) {
+      const p = this.pren.find(x => x.id === id); if (!p || p.stato !== 'prenotata' || p.dep.stato !== 'attesa') return { ok: false };
+      const f = Math.max(0, Math.min(1, (this.t - p.creata) / Math.max(1e-6, p.tDep - p.creata)));
+      const pen = f < 0.5 ? 0 : Math.round(f * PENALI.annullaMax / 10) * 10; this.penali += pen; p.stato = 'annullata'; this.stat.annullamenti++;
+      this.registra('annulla', { pren: id, frazione: +f.toFixed(2), penale: pen }); return { ok: true, penale: pen };
+    }
+    // ---------------------------------------------------------------- assenza (uscita, stallo del browser, standby): da qui in poi tempo reale 1:1
+    assenza(dtReal) {
+      const riepilogo = []; this.t += dtReal / DAY; this.tr += dtReal; this.vel = 1; this.forzato = false;
+      const b = bucketVel(1); this.stat.velSec[b] = (this.stat.velSec[b] || 0) + dtReal;
+      for (const p of this.pren) {
+        if (p.stato === 'prenotata' && p.dep.tEv <= this.t) { p.dep.stato = 'mancato'; this.stat.mancati++; this.penali += PENALI.partenzaMancata; p.dep.pen = PENALI.partenzaMancata; p.stato = 'mancata'; riepilogo.push({ pren: p, app: 'partenza', esito: 'mancato', penale: PENALI.partenzaMancata });
+          this.registra('esito', { pren: p.id, app: 'partenza', esito: 'mancato', assenza: true, penale: PENALI.partenzaMancata }); }
+        if (p.stato === 'in volo' && p.arr.tEv <= this.t) { p.arr.stato = 'mancato'; this.stat.mancati++; this.penali += PENALI.arrivoMancato; p.arr.pen = PENALI.arrivoMancato; p.stato = 'in orbita'; riepilogo.push({ pren: p, app: 'arrivo', esito: 'mancato', penale: PENALI.arrivoMancato });
+          this.registra('esito', { pren: p.id, app: 'arrivo', esito: 'mancato', assenza: true, penale: PENALI.arrivoMancato }); }
+        for (const ap of [p.dep, p.arr]) if (ap && ap.stato === 'preavviso' && ap.tEv > this.t) ap.stato = 'attesa';     // preavviso interrotto dall'assenza: riparte da capo
+      }
+      this.registra('assenza', { secondi: Math.round(dtReal), mancati: riepilogo.length }); if (riepilogo.length) this.on('assenza', riepilogo, dtReal); return riepilogo;
+    }
+    // ---------------------------------------------------------------- salvataggio
+    serializza(nowMs) { return JSON.parse(JSON.stringify({ v: 1, t: this.t, tr: this.tr, realMs: nowMs, vel: this.vel, pren: this.pren, log: this.log, seq: this.seq, nuovoId: this.nuovoId, penali: this.penali, stat: this.stat })); }
+    ripristina(o, nowMs) {
+      this.t = o.t; this.tr = o.tr; this.pren = o.pren || []; this.log = o.log || []; this.seq = o.seq; this.nuovoId = o.nuovoId || 1; this.penali = o.penali || 0; this.stat = o.stat || this.stat; this.vel = 1; this.forzato = false;
+      const trascorso = Math.max(0, (nowMs - o.realMs) / 1000);              // REGOLA: da "ultimo visto" in poi si va a 1:1, qualunque fosse la velocita'
+      return trascorso > 0 ? this.assenza(trascorso) : [];
+    }
+  }
+  const API = { DAY, PRE, RIT, CONTO, K, STALLO, ALONE_D, MAXPREN, VMAX, PRESET, PENALI, vLegge, toGo, velDaSlider, sliderDaVel, bucketVel, Mondo };
+  if (typeof module !== 'undefined') module.exports = API; else root.Tempo = API;
+})(this);
+
+</script>
+<script>
 const O = Orbite, DAY = O.DAY, AU = O.AU, cv = document.getElementById('map'), ctx = cv.getContext('2d');
 const pk = document.getElementById('pork'), pctx = pk.getContext('2d');
 const $ = id => document.getElementById(id);
@@ -295,29 +454,16 @@ for (const id of ['orig', 'dest']) ZONE.forEach(([nome, ids]) => { const og = do
   ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + (O.PORTI[c.id] ? '  (' + (ROCCE.includes(i) ? 'stazione ' : 'porto ') + O.PORTI[c.id] + ')' : ''), c.id); og.appendChild(op); });
   $(id).appendChild(og); });
 $('orig').value = 'terra'; $('dest').value = 'marte';
+const BUILD = 6;
 
-// Velocita' effettiva del tempo: avvicinandosi a un pianeta con lune il tempo si rallenta da solo, fino a far fare alla luna piu' veloce
-// al massimo un giro ogni 1,25 secondi. Lontano dai pianeti vale la velocita' scelta con i pulsanti. Passaggio graduale con lo zoom.
-function velEffettiva() {
-  if (!view.follow) return speed;
-  const lune = O.LUNE.filter(l => l.parent === view.follow); if (!lune.length) return speed;
-  const tetto = 0.8 * Math.min(...lune.map(l => Math.abs(l.periodo)));
-  if (speed <= tetto) return speed;
-  const k = Math.max(0, Math.min(1, (Math.log(view.scale) - Math.log(1.2e-5)) / (Math.log(6e-5) - Math.log(1.2e-5))));        // 0 = lontano, 1 = inquadrato
-  return Math.exp((1 - k) * Math.log(speed) + k * Math.log(tetto));
-}
-let t = O.giorni(2412, 1, 1), speed = 1, paused = false, W = 1, H = 1, dpr = 1;
+const mondo = new Tempo.Mondo(O.giorni(2412, 1, 1));
+let t = mondo.t, W = 1, H = 1, dpr = 1;
 let view = { follow: null, cx: 0, cy: 0, scale: 120 / AU, nome: 'interno' };
 const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], terra: ['Terra e Luna', 'terra', 6e-5], marte: ['Marte e Fobos', 'marte', 6e-5],
   giove: ['Giove e le sue lune', 'giove', 3.2e-5], saturno: ['Saturno e Titano', 'saturno', 4.5e-5], nettuno: ['Nettuno e Tritone', 'nettuno', 6e-5], plutone: ['Plutone e Caronte', 'plutone', 6e-5] };
 for (const k in VIEWS) $('view').add(new Option(VIEWS[k][0], k));
 function setView(k) { const v = VIEWS[k]; view.follow = v[1]; view.scale = v[2]; view.cx = 0; view.cy = 0; $('view').value = k; }
 $('view').onchange = e => { const v = VIEWS[e.target.value]; volaVerso(v[1] ? { id: v[1], scale: v[2] } : { centro: [0, 0], scale: v[2] }); e.target.blur(); };
-const SPEEDS = [['1 g/s', 1], ['10', 10], ['40', 40], ['150', 150], ['600', 600], ['2500', 2500]];
-SPEEDS.forEach(([n, v]) => { const b = document.createElement('button'); b.textContent = n; b.dataset.v = v; b.onclick = () => { speed = v; paused = false; agg(); }; $('speeds').appendChild(b); });
-function agg() { document.querySelectorAll('#speeds button').forEach(b => b.classList.toggle('on', !paused && +b.dataset.v === speed)); $('pause').classList.toggle('on', paused); }
-$('pause').onclick = () => { paused = !paused; agg(); };
-addEventListener('keydown', e => { if (e.code === 'Space') { paused = !paused; agg(); e.preventDefault(); } });
 
 function resize() { dpr = devicePixelRatio || 1; W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
 addEventListener('resize', resize); resize();
@@ -400,28 +546,39 @@ addEventListener('mousemove', e => { if (!drag) return; view.cx -= (e.clientX - 
 let gr = null, sel = null, missione = null;
 let calcolo = null;                                    // ricerca in corso (a pezzi, senza bloccare la pagina)
 function cercaFinestre(inquadra) {
-  const [y, m, d] = $('date').value.split('-').map(Number); const t0 = O.giorni(y || 2412, m || 1, d || 1);
+  const t0 = t;                                                              // si cerca a partire da adesso
   const a = O.per_id[$('orig').value], b = O.per_id[$('dest').value];
   if (a === b) { $('info').textContent = 'Scegli due corpi diversi.'; return; }
+  mondo.stat.ricerche++; mondo.registra('ricerca', { orig: a.id, dest: b.id, nave: naveSel().id });
   const g = O.grigliaInit(a, b, t0); gr = g; sel = null; calcolo = g; $('parti').disabled = true; $('finestre').textContent = 'calcolo…';
   const passo = () => {
     if (calcolo !== g) return;                         // e' partita un'altra ricerca
     const finito = O.grigliaAvanza(g, 6);
     disegnaPork(); if (!finito) $('info').textContent = 'calcolo delle finestre… ' + Math.round(100 * g.fatto / g.nD) + '%';
     if (!finito) { setTimeout(passo, 0); return; }
-    calcolo = null; sel = g.best; g.finestre = trovaFinestre(g); disegnaPork(); elencoFinestre(); mostraPiano(); if (inquadra) inquadraTraiettoria();
+    calcolo = null; g.finestre = trovaFinestre(g).filter(validaTDep); sel = (g.finestre.find(f => f.dv <= 1.15 * g.best.dv) || g.finestre[0] || null);          // si propone la prima finestra quasi economica come la migliore, senza far aspettare per risparmiare pochissimo
+   disegnaPork(); elencoFinestre(); mostraPiano(); if (inquadra) inquadraTraiettoria();
   };
   passo();
 }
 $('cerca').onclick = () => cercaFinestre(true);
 const naveSel = () => O.FLOTTA[$('nave').value] || O.NAVE_PROVA;
-Object.values(O.FLOTTA).forEach(n => $('nave').add(new Option(n.nome + '  (classe ' + n.classe + ')', n.id)));
+const validaTDep = p => p.tDep >= t + Tempo.ALONE_D;                         // almeno 5 ore di preparazione
+function aggiornaNavi() {
+  const cur = $('nave').value; $('nave').innerHTML = '';
+  Object.values(O.FLOTTA).forEach(n => { const imp = mondo.naveImpegnata(n.id), op = new Option(n.nome + '  (classe ' + n.classe + ')' + (imp ? ' · impegnata' : ''), n.id); op.disabled = imp; $('nave').add(op); });
+  const ok = [...$('nave').options].find(o => o.value === cur && !o.disabled) || [...$('nave').options].find(o => !o.disabled); if (ok) $('nave').value = ok.value;
+}
+aggiornaNavi();
 const infoNave = () => { const n = naveSel(); $('naveInfo').textContent = 'motore ' + O.MOTORI[n.motore].nome.toLowerCase() + ' · carico ' + n.carico + ' t · serbatoio ' + n.serbatoio + ' t (valori provvisori)'; };
 $('nave').onchange = () => { infoNave(); if (!gr || calcolo) return; disegnaPork(); elencoFinestre(); mostraPiano(); $('nave').blur(); };
 infoNave();
 for (const id of ['orig', 'dest']) $(id).addEventListener('change', e => { volaVerso({ id: e.target.value, scale: scalaCorpo(e.target.value) }); e.target.blur(); });
 const PK = { L: 52, R: 6, T: 8, B: 34 };
 const pkW = () => pk.width - PK.L - PK.R, pkH = () => pk.height - PK.T - PK.B;
+const relTxt = d => d < 1 ? 'ora' : d < 45 ? Math.round(d) + ' g' : d < 700 ? Math.round(d / 30.44) + ' mesi' : f1(d / 365.25, 1) + ' anni';      // tempo da adesso (0 = inizio della ricerca)
+const relBreve = d => d < 1 ? 'ora' : d < 45 ? Math.round(d) + ' g' : d < 700 ? Math.round(d / 30.44) + ' m' : f1(d / 365.25, d > 3650 ? 0 : 1) + ' a';
+const traTxt = d => d < 1 ? 'subito' : 'tra ' + relTxt(d);
 const tofTxt = v => v >= 1000 ? f1(v / 365.25, 1) + ' a' : Math.round(v) + ' g';
 const fracCella = v => O.propellente(v, naveSel()).frac;                     // costo in velocita' -> frazione del serbatoio, col motore scelto
 let hatch = null; function tratteggio() { if (hatch) return hatch; const c = document.createElement('canvas'); c.width = c.height = 6; const k = c.getContext('2d'); k.fillStyle = '#0c0c0c'; k.fillRect(0, 0, 6, 6); k.strokeStyle = '#3a3a3a'; k.lineWidth = 1; k.beginPath(); k.moveTo(0, 6); k.lineTo(6, 0); k.moveTo(-1, 1); k.lineTo(1, -1); k.moveTo(5, 7); k.lineTo(7, 5); k.stroke(); return hatch = pctx.createPattern(c, 'repeat'); }
@@ -437,12 +594,16 @@ function disegnaPork() {
   }
   pctx.strokeStyle = 'rgba(255,255,255,0.18)'; pctx.fillStyle = '#9fb4c8'; pctx.font = '10px ui-monospace,Menlo,monospace'; pctx.lineWidth = 1;
   for (let k = 0; k <= 4; k++) { const x = PK.L + pw * k / 4, td = gr.t0 + gr.H * k / 4;
-    pctx.beginPath(); pctx.moveTo(x, PK.T); pctx.lineTo(x, PK.T + ph); pctx.stroke(); pctx.textAlign = k === 0 ? 'left' : k === 4 ? 'right' : 'center'; pctx.fillText(gg(td).slice(0, 7), x, PK.T + ph + 13); }
+    pctx.beginPath(); pctx.moveTo(x, PK.T); pctx.lineTo(x, PK.T + ph); pctx.stroke(); pctx.textAlign = k === 0 ? 'left' : k === 4 ? 'right' : 'center'; pctx.fillText(k === 0 ? 'ora' : '+' + relBreve(td - gr.t0), x, PK.T + ph + 13); }
   for (let k = 0; k <= 4; k++) { const y = PK.T + ph - ph * k / 4, tf = gr.tmin + (gr.tmax - gr.tmin) * k / 4;
     pctx.beginPath(); pctx.moveTo(PK.L, y); pctx.lineTo(PK.L + pw, y); pctx.stroke(); pctx.textAlign = 'right'; pctx.fillText(tofTxt(tf), PK.L - 4, y + 3); }
-  pctx.textAlign = 'center'; pctx.fillStyle = '#7fe7ff'; pctx.fillText('data di partenza →', PK.L + pw / 2, h - 5);
+  pctx.textAlign = 'center'; pctx.fillStyle = '#7fe7ff'; pctx.fillText('partenza fra… (g giorni, m mesi, a anni) →', PK.L + pw / 2, h - 5);
   pctx.save(); pctx.translate(10, PK.T + ph / 2); pctx.rotate(-Math.PI / 2); pctx.fillText('durata del viaggio →', 0, 0); pctx.restore();
   $('lg0').textContent = isFinite(fmin) && fmin <= 1 ? Math.round(fmin * 100) + '% del serbatoio' : 'oltre il serbatoio'; $('lg1').textContent = '100%';
+  const xAl = PK.L + Math.max(0, t + Tempo.ALONE_D - gr.t0) / gr.H * pw, xNow = PK.L + Math.max(0, t - gr.t0) / gr.H * pw;           // passato e alone di 5 ore: visibili ma non selezionabili
+  pctx.save(); pctx.globalAlpha = 0.92; pctx.fillStyle = tratteggio(); pctx.fillRect(PK.L, PK.T, Math.max(6, xAl - PK.L), ph); pctx.restore();
+  pctx.strokeStyle = '#6bff9a'; pctx.lineWidth = 2; pctx.beginPath(); pctx.moveTo(xNow, PK.T - 2); pctx.lineTo(xNow, PK.T + ph); pctx.stroke();
+  pctx.fillStyle = '#6bff9a'; pctx.textAlign = 'left'; pctx.fillText('adesso', Math.min(xNow + 4, PK.L + pw - 40), PK.T + 10);
   const pos = p => [PK.L + ((p.tDep - gr.t0) / gr.H) * (pw - cw) + cw / 2, PK.T + ph - ((p.tof - gr.tmin) / (gr.tmax - gr.tmin) * (gr.nT - 1) + 0.5) * ch];
   const marca = (p, col, forma, r) => { const [x, y] = pos(p); pctx.strokeStyle = col; pctx.lineWidth = 2;
     if (forma === 'rombo') { pctx.beginPath(); pctx.moveTo(x, y - r); pctx.lineTo(x + r, y); pctx.lineTo(x, y + r); pctx.lineTo(x - r, y); pctx.closePath(); pctx.stroke(); } else { pctx.beginPath(); pctx.arc(x, y, r, 0, 7); pctx.stroke(); } };
@@ -469,47 +630,44 @@ function elencoFinestre() {
   box.innerHTML = '<div class="wh"><span>partenza</span><span>durata</span><span>propellente</span></div>';
   const migl = Math.min(...gr.finestre.map(q => q.dv));
   gr.finestre.forEach(p => { const b = document.createElement('button'); b.className = 'win';
-    b.innerHTML = `<span>${gg(p.tDep)}</span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
+    b.innerHTML = `<span>${traTxt(p.tDep - gr.t0)}<br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep)}</span></span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
     b.onclick = () => { sel = p; disegnaPork(); mostraPiano(); inquadraTraiettoria(); }; box.appendChild(b); });
 }
 const hovIniziale = 'Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.';
 pk.addEventListener('mousemove', e => {
   if (!gr || calcolo) return; const q = daDiagramma(e); if (!q) { $('hov').textContent = hovIniziale; return; }
   const p = O.piano(gr.orig, gr.dest, q.td, q.tf); if (!p) { $('hov').innerHTML = '<span class="warn">Viaggio impossibile: passa troppo vicino al Sole.</span>'; return; }
-  $('hov').innerHTML = `partenza <b>${gg(p.tDep)}</b> · arrivo ${gg(p.tDep + p.tof)}<br>durata <b>${tofTxt(p.tof)}</b> · propellente <b>${pctTxt(p)}</b>`;
+  if (!validaTDep(p)) { $('hov').innerHTML = '<span class="warn">Troppo vicina o già passata: servono almeno 5 ore di preparazione.</span>'; return; }
+  $('hov').innerHTML = `partenza <b>${traTxt(p.tDep - gr.t0)}</b> (${gg(p.tDep)}) · arrivo ${gg(p.tDep + p.tof)}<br>durata <b>${tofTxt(p.tof)}</b> · propellente <b>${pctTxt(p)}</b>`;
 });
 pk.addEventListener('mouseleave', () => { $('hov').textContent = hovIniziale; });
 pk.addEventListener('click', e => {
   if (!gr || calcolo) return; const q = daDiagramma(e); if (!q) return; const p = O.piano(gr.orig, gr.dest, q.td, q.tf);
+  if (p && !validaTDep(p)) { $('info').innerHTML = '<span class="warn">Finestra troppo vicina o già passata: servono almeno 5 ore di preparazione.</span>'; return; }
   if (p) { sel = p; disegnaPork(); mostraPiano(); inquadraTraiettoria(); } else $('info').innerHTML = '<span class="warn">Traiettoria non valida: passa a meno di ' + O.RP_MIN + ' UA dal Sole (zona grigia).</span>';
 });
 const f1 = (x, n = 1) => x.toFixed(n).replace('.', ',');
 const gg = d => O.data(d).toISOString().slice(0, 10);
 function mostraPiano() {
-  if (!sel) { $('info').textContent = 'Nessuna soluzione trovata.'; $('parti').disabled = true; return; }
+  if (!sel) { $('info').textContent = gr && gr.finestre && !gr.finestre.length ? 'Nessuna finestra utile in questo periodo.' : 'Nessuna soluzione trovata.'; $('parti').disabled = true; return; }
   const N = naveSel(), pr = O.propellente(sel.dv, N), fuori = pr.frac > 1;
   const durata = sel.tof >= 700 ? f1(sel.tof / 365.25, 1) + ' anni' : f1(sel.tof, 0) + ' giorni', sub = sel.tof >= 700 ? f1(sel.tof, 0) + ' giorni' : '≈ ' + f1(sel.tof / 30.44, 1) + ' mesi';
   const avv = sel.rp < 0.35 * AU ? `<div class="warn" style="margin-bottom:6px">Attenzione: passa a ${f1(sel.rp / AU, 2)} UA dal Sole (zona molto calda).</div>` : '';
   $('info').innerHTML = avv + `<div class="grande"><div><span class="et">DURATA</span><b>${durata}</b><span class="sub">${sub}</span></div>
     <div class="${fuori ? 'fuori' : ''}"><span class="et">PROPELLENTE</span><b>${fuori ? '> 100%' : Math.round(pr.frac * 100) + '%'}</b><span class="sub">${f1(pr.t, 1)} t su ${N.serbatoio} t${fuori ? ' · non basta' : ''}</span></div></div>
-  <div class="row"><span>partenza</span><span class="ok">${gg(sel.tDep)}</span></div>
+  <div class="row"><span>partenza</span><span class="ok">${traTxt(sel.tDep - (gr ? gr.t0 : t))} · ${gg(sel.tDep)}</span></div>
   <div class="row"><span>arrivo</span><span>${gg(sel.tDep + sel.tof)}</span></div>
   <details><summary>dettagli tecnici</summary>
     <div class="row"><span>variazione di velocità totale</span><span>${f1(sel.dv, 2)} km/s</span></div>
     <div class="row"><span>velocità relativa ai pianeti (partenza + arrivo)</span><span>${f1(sel.vinf1, 1)} + ${f1(sel.vinf2, 1)} km/s</span></div>
     <div class="row"><span>distanza minima dal Sole</span><span>${f1(sel.rp / AU, 2)} UA</span></div></details>`;
-  $('parti').disabled = fuori; $('parti').textContent = fuori ? 'propellente insufficiente per questa nave' : 'programma la partenza (' + gg(sel.tDep) + ')';
-}
-$('parti').onclick = () => { missione = { p: sel, fase: 'attesa' }; traccia.length = 0; if (sel.tDep < t) t = sel.tDep - 1; };
-function statoNave() {
-  if (!missione) return null; const p = missione.p, tf = p.tDep + p.tof;
-  if (t < p.tDep) { const s = O.stato(p.orig, t); return { x: s.x, y: s.y, fase: 'in attesa della finestra' }; }
-  if (t >= tf) { const s = O.stato(p.dest, t); return { x: s.x, y: s.y, fase: 'arrivata' }; }
-  const q = O.propaga(p.r1, p.v1, (t - p.tDep) * DAY); return { x: q.r[0], y: q.r[1], v: Math.hypot(q.v[0], q.v[1]), fase: 'in crociera' };
+  const imp = mondo.naveImpegnata(N.id), pieno = mondo.attivi().length >= Tempo.MAXPREN, vicina = !validaTDep(sel);
+  $('parti').disabled = fuori || imp || pieno || vicina;
+  $('parti').textContent = fuori ? 'Propellente insufficiente per questa nave' : imp ? 'Nave già impegnata' : pieno ? 'Hai già ' + Tempo.MAXPREN + ' viaggi prenotati' : vicina ? 'Finestra troppo vicina' : 'Prenota il lancio';
 }
 
 // ---- disegno ----
-const traccia = []; let tPrec = null;
+
 
 // ---- aspetto dei corpi: stile "linea tecnica" (contorni ciano sottili su fondo scuro, come navi e stazione) ----
 const PA_CY = '#7fe7ff', PA_LIMBO = '#bfeaff', PA_AMB = '#ffb347';
@@ -631,7 +789,7 @@ function disegna() {
   }
   // traiettoria pianificata
   if (sel) { const q = [], n = 160; for (let i = 0; i <= n; i++) { const s = O.propaga(sel.r1, sel.v1, sel.tof * DAY * i / n); q.push(s.r); }
-    ctx.strokeStyle = missione ? 'rgba(107,255,154,0.6)' : 'rgba(127,231,255,0.5)'; ctx.setLineDash([6, 5]); ctx.beginPath();
+    ctx.strokeStyle = 'rgba(127,231,255,0.5)'; ctx.setLineDash([6, 5]); ctx.beginPath();
     q.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.setLineDash([]); }
   disegnaFascia();
   // Sole e pianeti: raggio = max(vero, base * (zoom/zoom_inquadratura)^0.26), con base legata al raggio reale (radice 0,3): crescono con lo zoom e, inquadrati, mostrano i loro tratti
@@ -656,7 +814,7 @@ function disegna() {
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
       const veraPx = l.a * view.scale, minPx = Math.max(rr, rAnelli * 0.9) + 13 + 10 * i, orbPx = Math.max(veraPx, minPx); if (orbPx > veraPx * 1.05) ingrandita = true;
-      const rapida = !paused && velEffettiva() / Math.abs(l.periodo) > 1.2;                                  // piu' di un giro ogni 0,8 secondi: la luna non si segue a occhio
+      const rapida = mondo.velEffettiva() / 86400 / Math.abs(l.periodo) > 1.2;                                  // piu' di un giro ogni 0,8 secondi: la luna non si segue a occhio
       const ang = (l.fase + (rapida ? 0 : 360 * t / l.periodo)) * O.DEG, lx = x + orbPx * Math.cos(ang), ly = y - orbPx * Math.sin(ang), rl = Math.min(8, 2.4 + 0.1 * rr);
       ctx.strokeStyle = '#17304a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, orbPx, 0, 7); ctx.stroke();
       ctx.globalAlpha = rapida ? 0.35 : 1; disegnaPianeta({ id: 'luna-' + l.id, col: '#c9c6bd' }, lx, ly, rl, [x - lx, y - ly]); ctx.globalAlpha = 1;
@@ -669,30 +827,198 @@ function disegna() {
     const q = O.stato(c, tt), gx = sx(q.x), gy = sy(q.y); ctx.strokeStyle = '#7fe7ff'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(gx, gy, 9, 0, 7); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = '#7fe7ff'; ctx.textAlign = 'left'; ctx.fillText(et + ' ' + gg(tt), gx + 13, gy + 14);
   }
-  // nave
-  const n = statoNave(); $('stato').textContent = '';
-  if (n) {
-    if (tPrec !== null && Math.abs(t - tPrec) > 30) traccia.length = 0;        // salto nel tempo: la traccia non ha senso
-    tPrec = t;
-    if (n.fase === 'in crociera') { traccia.push([n.x, n.y]); if (traccia.length > 600) traccia.shift(); ctx.strokeStyle = '#6bff9a'; ctx.lineWidth = 2; ctx.beginPath();
-      traccia.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.lineWidth = 1; }
-    const x = sx(n.x), y = sy(n.y); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.fillText('NAVE', x + 12, y - 8);
-    const p = missione.p; $('stato').innerHTML = `nave: <b>${n.fase}</b>` + (n.v ? ` · ${f1(n.v, 1)} km/s · giorno ${f1(t - p.tDep, 0)} di ${f1(p.tof, 0)}` : '');
+  // navi delle prenotazioni: traiettoria tenue e posizione attuale
+  for (const p of mondo.pren) {
+    if (!['prenotata', 'in volo', 'in orbita'].includes(p.stato)) continue;
+    let pos; if (p.stato === 'prenotata') { const q = O.stato(O.per_id[p.orig], t); pos = [q.x, q.y]; }
+    else if (p.stato === 'in volo') pos = O.propaga(p.r1, p.v1, Math.max(0, (t - p.tDep)) * DAY).r;
+    else { const q = O.stato(O.per_id[p.dest], t); pos = [q.x, q.y]; }
+    if (p.stato !== 'in orbita') { const tr = trajPren(p); ctx.strokeStyle = p.stato === 'in volo' ? 'rgba(107,255,154,0.55)' : 'rgba(255,179,71,0.35)'; ctx.setLineDash([5, 5]); ctx.beginPath(); tr.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.setLineDash([]); }
+    const x = sx(pos[0]), y = sy(pos[1]); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1;
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(O.FLOTTA[p.nave].nome, x + 12, y - 8);
   }
   // scala
   const ua = view.scale * AU; ctx.fillStyle = '#7f98ae'; ctx.textAlign = 'right';
   const lenKm = Math.pow(10, Math.floor(Math.log10(100 / view.scale))), lp = lenKm * view.scale; ctx.strokeStyle = '#7f98ae';
   ctx.beginPath(); ctx.moveTo(W - 20 - lp, H - 50); ctx.lineTo(W - 20, H - 50); ctx.stroke();
   ctx.fillText(lenKm >= AU * 0.5 ? f1(lenKm / AU, lenKm / AU < 1 ? 1 : 0) + ' UA' : (lenKm >= 1e6 ? lenKm / 1e6 + ' milioni km' : lenKm + ' km'), W - 20, H - 56);
-  $('hud').innerHTML = `${gg(t)}  <span class="small">(${paused ? 'in pausa' : (() => { const v = velEffettiva(); return v >= 0.95 * speed ? speed + ' giorni al secondo' : (v >= 1 ? v.toFixed(1).replace('.', ',') + ' giorni al secondo' : (v * 24).toFixed(1).replace('.', ',') + ' ore al secondo') + ' · rallentato per seguire le lune'; })()})</span><br><span class="small">* fase iniziale scelta dal gioco · cerchio verde ◎ = spazioporto (con il suo nome) · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
+  aggiornaHud();
 }
-let last = performance.now();
+// ======================================================================================================
+//  TEMPO, PRENOTAZIONI, APPUNTAMENTI, REGISTRO, SALVATAGGIO  (le regole sono in tempo.js)
+// ======================================================================================================
+const CHIAVE = 'st_mappa_stato_v1', INVIO_ATTIVO = true, LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';   // in locale non invia mai (vedi inviaEvento)
+const SESSIONE = Math.random().toString(36).slice(2, 10);
+const trajCache = new Map();
+function trajPren(p) { let tr = trajCache.get(p.id); if (!tr) { tr = []; for (let i = 0; i <= 90; i++) tr.push(O.propaga(p.r1, p.v1, p.tof * DAY * i / 90).r); trajCache.set(p.id, tr); } return tr; }
+const nomeCorpo = id => (O.per_id[id] || {}).nome || id;
+const fmtTempo = d => O.data(d).toISOString().replace('T', ' ').slice(0, 19);
+function fmtReale(sec) { sec = Math.max(0, sec); if (sec < 90) return Math.round(sec) + ' s'; if (sec < 5400) return Math.round(sec / 60) + ' min'; if (sec < 172800) { const h = Math.floor(sec / 3600), m = Math.round((sec - h * 3600) / 60); return h + ' h' + (m ? ' ' + m + ' min' : ''); } return Math.round(sec / 86400) + ' giorni'; }
+function fmtGioco(d) { if (d < 0) d = 0; if (d < 1 / 24) return Math.round(d * 1440) + ' min'; if (d < 1) return f1(d * 24, d < 0.2 ? 1 : 0) + ' ore'; if (d < 45) return f1(d, d < 5 ? 1 : 0) + ' giorni'; if (d < 700) return Math.round(d / 30.44) + ' mesi'; return f1(d / 365.25, 1) + ' anni'; }
+function etichettaVel(v) { if (v < 1.5) return 'tempo reale (1:1)'; return v < 250 ? '1 ora = ' + fmtReale(3600 / v) : '1 giorno = ' + fmtReale(86400 / v); }
+// tetto di velocita' avvicinandosi a un pianeta con lune (come prima: la luna piu' veloce al massimo un giro ogni ~1,25 s)
+mondo.tetto = () => {
+  if (!view.follow) return Infinity; const lune = O.LUNE.filter(l => l.parent === view.follow); if (!lune.length) return Infinity;
+  const tetto = 0.8 * Math.min(...lune.map(l => Math.abs(l.periodo))) * 86400;
+  const k = Math.max(0, Math.min(1, (Math.log(view.scale) - Math.log(1.2e-5)) / (Math.log(6e-5) - Math.log(1.2e-5))));
+  return Math.exp((1 - k) * Math.log(86400) + k * Math.log(tetto));
+};
+// ---- suoni e avvisi
+let audio = null;
+function suono(freq, dur, vol = 0.12, tipo = 'sine') { try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); const o = audio.createOscillator(), g = audio.createGain(); o.type = tipo; o.frequency.value = freq; g.gain.setValueAtTime(0.0001, audio.currentTime); g.gain.exponentialRampToValueAtTime(vol, audio.currentTime + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + dur + 0.02); } catch (e) {} }
+addEventListener('pointerdown', () => { try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) {} }, { once: false });
+function notifica(testo) { try { if (document.hidden && window.Notification && Notification.permission === 'granted') new Notification('Space Trucker', { body: testo }); } catch (e) {} }
+function toast(testo, ms = 8000) { const el = $('toast'); el.textContent = testo; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { el.hidden = true; }, ms); }
+// ---- eventi del mondo
+mondo.on = (tipo, ...a) => {
+  if (tipo === 'preavviso') { const [p, ap] = a; suono(880, 0.25, 0.14); setTimeout(() => suono(880, 0.25, 0.14), 300); notifica((ap.tipo === 'partenza' ? 'Partenza' : 'Arrivo') + ' tra pochi secondi: ' + O.FLOTTA[p.nave].nome); }
+  if (tipo === 'ritardo') suono(220, 0.5, 0.16, 'square');
+  if (tipo === 'attivo') suono(1320, 0.12, 0.12);
+  if (tipo === 'esito') { const [p, ap, e, pen, rit] = a, N = O.FLOTTA[p.nave].nome; let m;
+    if (ap.tipo === 'partenza') m = e === 'mancato' ? `Lancio mancato: la finestra è persa. Penale provvisoria ${pen} cr. Serve una nuova ricerca.` : e === 'riuscito_ritardo' ? `Partenza in ritardo di ${rit} s: penale provvisoria ${pen} cr. ${N} è in viaggio verso ${nomeCorpo(p.dest)}.` : `Partenza confermata (reazione ${f1(ap.reazione || 0, 1)} s). ${N} è in viaggio verso ${nomeCorpo(p.dest)}.`;
+    else m = e === 'mancato' ? `Arrivo mancato: ${N} attende in orbita a ${nomeCorpo(p.dest)}. Premi «Completa missione» quando vuoi (penale provvisoria ${pen} cr).` : e === 'riuscito_orbita' ? `Missione completata con ritardo: ${N} a ${nomeCorpo(p.dest)}.` : e === 'riuscito_ritardo' ? `Missione completata in ritardo di ${rit} s (penale provvisoria ${pen} cr): ${N} a ${nomeCorpo(p.dest)}.` : `Missione completata (reazione ${f1(ap.reazione || 0, 1)} s): ${N} è arrivata a ${nomeCorpo(p.dest)}.`;
+    toast(m); suono(e === 'mancato' ? 196 : 660, 0.4, 0.14); aggiornaNavi(); if (gr) mostraPiano(); }
+  if (tipo === 'assenza') { const [r, dt] = a; if (r.length) mostraAssenza(r, dt); }
+  if (tipo === 'log') inviaEvento(a[0]);
+};
+function inviaEvento(e) {
+  if (!INVIO_ATTIVO || !LOG_URL || ['localhost', '127.0.0.1', ''].includes(location.hostname)) return;
+  const d = Object.assign({}, e); const base = { type: 'mappa', session: SESSIONE, build: BUILD, evento: d.tipo, tgioco: fmtTempo(d.t), treale: d.tr }; delete d.tipo; delete d.t; delete d.tr;
+  const chiavi = Object.keys(d); chiavi.slice(0, 6).forEach((k, i) => { base['d' + (i + 1)] = k + '=' + d[k]; });
+  try { fetch(LOG_URL, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(base) }); } catch (er) {}
+}
+function mostraAssenza(r, dt) {
+  const el = document.createElement('div'); el.id = 'modalAss';
+  el.innerHTML = '<div><b>Mentre eri via (' + fmtReale(dt) + ')</b><br>' + r.map(x => `• ${x.app === 'partenza' ? 'Lancio' : 'Arrivo'} di ${O.FLOTTA[x.pren.nave].nome} (${nomeCorpo(x.pren.orig)} → ${nomeCorpo(x.pren.dest)}): <b>mancato</b>${x.app === 'partenza' ? ' · finestra persa' : ' · la nave attende in orbita'} · penale provvisoria ${x.penale} cr`).join('<br>') + '<br><br><button id="assOk">Ho capito</button></div>';
+  $('mapw').appendChild(el); $('assOk').onclick = () => el.remove();
+}
+// ---- orologio: barra della velocita'
+const presetBtn = Tempo.PRESET.map(pr => { const b = document.createElement('button'); b.textContent = pr.nome === 'tempo reale' ? '1:1' : pr.nome; b.title = etichettaVel(pr.v); b.onclick = () => impostaVel(pr.v); $('velPresets').appendChild(b); return b; });
+function impostaVel(v) { if (mondo.forzato || mondo.inPreavviso()) return; const prima = Tempo.bucketVel(mondo.vel); mondo.vel = Math.max(1, Math.min(Tempo.VMAX, v)); const dopo = Tempo.bucketVel(mondo.vel); if (prima !== dopo) mondo.registra('velocita', { da: prima, a: dopo }); }
+$('velSl').addEventListener('input', () => { let p = +$('velSl').value / 1000; for (const pr of Tempo.PRESET) if (Math.abs(p - Tempo.sliderDaVel(pr.v)) < 0.02) p = Tempo.sliderDaVel(pr.v); impostaVel(Tempo.velDaSlider(p)); });
+// ---- pianificazione: apertura e chiusura
+function apriPian() { $('pianifica').hidden = false; $('apriPian').hidden = true; mondo.forzato = true; mondo.registra('pianifica_apri'); aggiornaNavi(); infoNave(); try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {} }
+function chiudiPian(annullata) { $('pianifica').hidden = true; $('apriPian').hidden = false; mondo.forzato = false; gr = null; sel = null; calcolo = null; $('info').textContent = 'Cerca le finestre e scegline una.'; $('finestre').textContent = '…'; $('stato').textContent = ''; if (annullata) mondo.registra('pianifica_annulla'); }
+$('apriPian').onclick = apriPian; $('annullaPian').onclick = () => chiudiPian(true);
+$('parti').onclick = () => {
+  if (!sel || !gr) return; const N = naveSel(); const mn = Math.min(...(gr.finestre || []).map(f => f.dv)), prima = (gr.finestre || [])[0];
+  const scelta = (gr.finestre || []).some(f => f.tDep === sel.tDep) ? (Math.abs(sel.dv - mn) < 1e-6 ? 'economica' : (prima && prima.tDep === sel.tDep ? 'prima' : 'altra')) : 'libera';
+  const r = mondo.prenota(sel, N.id, { scelta }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
+  toast('Lancio prenotato: ' + N.nome + ', ' + nomeCorpo(r.pren.orig) + ' → ' + nomeCorpo(r.pren.dest) + '. I preparativi sono iniziati.', 6000); chiudiPian(false); aggiornaLista(true);
+};
+// ---- elenco dei viaggi prenotati
+let sigPren = '';
+function aggiornaLista(forza) {
+  const att = mondo.attivi(), chiusi = mondo.pren.filter(p => !att.includes(p)).slice(-3).reverse();
+  const sig = mondo.pren.map(p => p.id + p.stato + p.dep.stato + p.arr.stato).join('|');
+  $('npren').textContent = '(' + att.length + '/' + Tempo.MAXPREN + ')';
+  if (sig !== sigPren || forza) {
+    sigPren = sig; const box = $('listaPren'); if (!att.length && !chiusi.length) box.textContent = 'Nessun viaggio prenotato.';
+    else box.innerHTML = att.map(p => `<div class="pren" id="pr${p.id}"><div class="t"><b>${O.FLOTTA[p.nave].nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s" id="ps${p.id}"></div>
+      <button id="pb${p.id}" data-p="${p.id}" data-a="${p.stato === 'prenotata' ? 'partenza' : 'arrivo'}"></button>${p.stato === 'prenotata' ? `<button id="pa${p.id}" data-p="${p.id}">Annulla</button>` : ''}</div>`).join('')
+      + chiusi.map(p => `<div class="pren fine"><div class="t">${O.FLOTTA[p.nave].nome} · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${{ conclusa: 'conclusa', mancata: 'lancio mancato · finestra persa', annullata: 'annullata' }[p.stato] || p.stato}</div></div>`).join('');
+    box.querySelectorAll('button[id^=pb]').forEach(b => { b.onclick = () => { mondo.premi(+b.dataset.p, b.dataset.a); aggiornaLista(true); }; });
+    box.querySelectorAll('button[id^=pa]').forEach(b => { b.onclick = () => { if (confirm('Annullare la prenotazione? Può avere una penale provvisoria.')) { const r = mondo.annulla(+b.dataset.p); toast(r.ok ? 'Prenotazione annullata' + (r.penale ? ' (penale provvisoria ' + r.penale + ' cr)' : ' senza penale') + '.' : 'Non si può annullare ora.'); aggiornaNavi(); aggiornaLista(true); } }; });
+  }
+  const vu = mondo.velUtente();
+  for (const p of att) {
+    const s = $('ps' + p.id), b = $('pb' + p.id); if (!s || !b) continue; const ap = p.stato === 'prenotata' ? p.dep : p.arr, R = (ap.tEv - t) * 86400, nome = ap.tipo === 'partenza' ? 'Parti' : 'Completa missione';
+    b.textContent = nome; b.className = '';
+    if (p.stato === 'in orbita') { s.textContent = 'In orbita: attende l\'attracco.'; b.disabled = false; b.className = 'ok'; }
+    else if (ap.stato === 'preavviso' || ap.stato === 'ritardo') { s.innerHTML = ap.stato === 'ritardo' ? '<b style="color:#ff6a6a">IN RITARDO</b>' : '<b style="color:#ffb347">' + (ap.tipo === 'partenza' ? 'Partenza' : 'Arrivo') + ' tra ' + Math.ceil(Tempo.toGo(R, ap.vLock)) + ' s</b>'; b.disabled = ap.premuto; b.className = 'ok'; if (ap.premuto) b.textContent = 'Presenza confermata ✓'; }
+    else { const g = (p.stato === 'prenotata' ? 'Partenza' : 'Arrivo') + ' fra ' + fmtGioco(R / 86400) + ' di gioco' + (vu > 1.5 ? ' · ' + fmtReale(R / vu) + ' reali' : '') + ' (' + gg(ap.tEv) + ')'; s.textContent = g; b.disabled = true; b.textContent = nome + ' · non ancora'; }
+  }
+}
+// ---- avviso in primo piano
+let ultimoSec = -1, lampeggio = 0;
+function aggiornaBanner() {
+  let urg = null, rem = 1e18;
+  for (const p of mondo.pren) for (const ap of [p.dep, p.arr]) if (ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo') && !(ap.tipo === 'partenza' && p.stato !== 'prenotata') && !(ap.tipo === 'arrivo' && p.stato !== 'in volo')) { const R = ap.stato === 'ritardo' ? -1 : (ap.tEv - t) * 86400; if (R < rem) { rem = R; urg = [p, ap]; } }
+  const el = $('banner'); if (!urg) { el.hidden = true; if (document.title.startsWith('⚠')) document.title = 'Space Trucker - mappa e pianificatore (prototipo)'; ultimoSec = -1; return; }
+  const [p, ap] = urg, N = O.FLOTTA[p.nave].nome; el.hidden = false; el.className = ap.stato === 'ritardo' ? 'rit' : '';
+  $('banTit').textContent = (ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO') + ' · ' + N + ' · ' + nomeCorpo(p.orig) + ' → ' + nomeCorpo(p.dest);
+  let sec, sub; if (ap.stato === 'ritardo') { sec = Math.max(0, Math.ceil(Tempo.RIT - (mondo.tr - ap.ritTr))); sub = 'IN RITARDO: ancora ' + sec + ' s prima di perdere ' + (ap.tipo === 'partenza' ? 'la finestra' : 'l\'appuntamento') + ' · penale provvisoria ' + Math.round((mondo.tr - ap.ritTr) * Tempo.PENALI.ritardoAlSecondo) + ' cr'; }
+  else { sec = Math.max(0, Math.ceil(Tempo.toGo(rem, ap.vLock))); sub = ap.premuto ? 'Presenza confermata. Attendi lo zero.' : 'Premi il pulsante per confermare che ci sei.'; }
+  $('banConto').textContent = sec; $('banSub').textContent = sub; const b = $('banBtn'); b.textContent = ap.tipo === 'partenza' ? 'Parti' : 'Completa missione'; b.disabled = !!ap.premuto && ap.stato !== 'ritardo'; b.onclick = () => { mondo.premi(p.id, ap.tipo); aggiornaLista(true); };
+  if (sec !== ultimoSec) { if (ap.stato === 'preavviso' && sec <= 10 && sec > 0) suono(660, 0.1, 0.1); ultimoSec = sec; }
+  document.title = ((Math.floor(performance.now() / 500) % 2) ? '⚠ ' : '') + (ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO') + ' tra ' + sec + ' s';
+}
+// ---- HUD e barra della velocita'
+function aggiornaHud() {
+  const v = mondo.velEffettiva(), vu = mondo.velUtente(), lim = mondo.forzato ? ' · tempo reale durante la pianificazione' : mondo.inPreavviso() ? ' · frenata del tempo' : (v < 0.97 * vu ? ' · rallentato per seguire le lune' : '');
+  $('hud').innerHTML = `${fmtTempo(t)}  <span class="small">(${etichettaVel(v)}${lim})</span><br><span class="small">* fase iniziale scelta dal gioco · ◎ = spazioporto · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
+}
+function aggiornaBarra() {
+  const bloccata = mondo.forzato || mondo.inPreavviso(), v = mondo.velEffettiva();
+  $('velSl').disabled = bloccata; if (!bloccata && document.activeElement !== $('velSl')) $('velSl').value = Math.round(Tempo.sliderDaVel(mondo.vel) * 1000);
+  $('velEt').textContent = etichettaVel(v); presetBtn.forEach((b, i) => { b.disabled = bloccata; b.className = Math.abs(Math.log(Math.max(1, mondo.vel) / Tempo.PRESET[i].v)) < 0.25 && !bloccata ? 'on' : ''; });
+}
+// ---- registro
+function testoRegistro() {
+  const st = mondo.stat, ev = mondo.log, med = a => { if (!a.length) return '—'; const b = [...a].sort((x, y) => x - y); return f1(b[b.length >> 1], 1); };
+  const vs = Object.entries(st.velSec).map(([k, v]) => k + ' ' + fmtReale(v)).join(', ') || '—';
+  const righe = ['SPACE TRUCKER · registro della prova · build ' + BUILD, 'sessione ' + SESSIONE + ' · durata ' + fmtReale((Date.now() - (st.inizioMs || Date.now())) / 1000) + ' · tempo di gioco ' + fmtTempo(t),
+    'velocità usate: ' + vs, 'ricerche ' + st.ricerche + ' · prenotazioni ' + st.prenotazioni + ' · annullamenti ' + st.annullamenti + ' · mancati ' + st.mancati + ' · ritardi ' + st.ritardi,
+    'reazioni (s): ' + (st.reazioni.map(x => f1(x, 1)).join(' · ') || '—') + ' · mediana ' + med(st.reazioni), 'tempo in pianificazione: ' + fmtReale(st.pianifSec) + ' · penali provvisorie: ' + mondo.penali + ' cr', '--- eventi ---'];
+  for (const e of ev) { const { tr, t: tg, tipo, ...r } = e; righe.push('[' + f1(tr / 60, 1) + ' min | ' + fmtTempo(tg).slice(0, 16) + '] ' + tipo + ' ' + Object.entries(r).map(([k, v]) => k + '=' + v).join(' ')); }
+  return righe.join('\n');
+}
+$('regCopia').onclick = () => { const tx = testoRegistro(); const ok = () => toast('Registro copiato: incollalo in un messaggio per l\'autore.', 4000); if (navigator.clipboard) navigator.clipboard.writeText(tx).then(ok, () => window.prompt('Copia il registro:', tx)); else window.prompt('Copia il registro:', tx); };
+$('nuovaProva').onclick = () => { if (confirm('Azzerare la prova? Si perdono prenotazioni e registro.')) { try { localStorage.removeItem(CHIAVE); } catch (e) {} mondo.registra = () => {}; location.reload(); } };
+$('regDet').addEventListener('toggle', () => { if ($('regDet').open) { $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); } });
+// ---- salvataggio e rientro
+function salva() { try { localStorage.setItem(CHIAVE, JSON.stringify(mondo.serializza(Date.now()))); } catch (e) {} }
+addEventListener('pagehide', salva);
+document.addEventListener('visibilitychange', () => { if (document.hidden) { if (mondo.vel > 1) { mondo.vel = 1; } mondo.registra('visibilita', { stato: 'nascosta' }); salva(); } else { mondo.registra('visibilita', { stato: 'visibile' }); } });
+{ let salvato = null; try { const x = localStorage.getItem(CHIAVE); if (x) salvato = JSON.parse(x); } catch (e) {}
+  mondo.stat.inizioMs = Date.now();
+  if (salvato) { const inizio = salvato.stat && salvato.stat.inizioMs; mondo.ripristina(salvato, Date.now()); if (inizio) mondo.stat.inizioMs = inizio; mondo.registra('ripresa', { build: BUILD }); t = mondo.t; }
+  else mondo.registra('sessione_inizio', { build: BUILD }); }
+// ======================================================================================================
+//  CALENDARIO DELLE FINESTRE: una riga per rotta, le finestre come barre, la linea "adesso"
+// ======================================================================================================
+const CAL_ROTTE = [['terra', 'marte'], ['terra', 'venere'], ['marte', 'vesta'], ['marte', 'cerere'], ['vesta', 'cerere'], ['cerere', 'igea'], ['cerere', 'giove'], ['terra', 'giove']];
+const CAL = { righe: null, t0: 0, ORIZ: 10 * 365.25, STEP: 10, coda: [] };
+function dvData(A, B, td) { const hh = O.hohmann(A, B); let m = Infinity; for (let j = 0; j < 18; j++) { const q = O.piano(A, B, td, hh * (0.45 + 1.4 * j / 17)); if (q && q.dv < m) m = q.dv; } return m; }
+function calcolaCalendario() {
+  CAL.t0 = t; CAL.righe = CAL_ROTTE.map(([a, b]) => { const A = O.per_id[a], B = O.per_id[b], sin = O.sinodico(A, B) / 365.25, n = Math.ceil(Math.min(Math.max(sin * 1.05, 10), 26) * 365.25 / CAL.STEP); return { a, b, A, B, nome: nomeCorpo(a) + ' → ' + nomeCorpo(b), sin, n, serie: [], mn: Infinity, pronta: false }; });
+}
+function passoCalendario() {
+  if (!CAL.righe) return; const fine = performance.now() + 5;
+  for (const r of CAL.righe) { while (!r.pronta && performance.now() < fine) { const v = dvData(r.A, r.B, CAL.t0 + r.serie.length * CAL.STEP); r.serie.push(v); if (v < r.mn) r.mn = v; if (r.serie.length >= r.n) r.pronta = true; } if (performance.now() >= fine) return; }
+}
+function disegnaCal() {
+  const cvc = $('calcv'), c = cvc.getContext('2d'), w = cvc.clientWidth, h = cvc.clientHeight; if (cvc.width !== w * dpr || cvc.height !== h * dpr) { cvc.width = w * dpr; cvc.height = h * dpr; }
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.fillStyle = '#08111a'; c.fillRect(0, 0, w, h);
+  if (!CAL.righe) return; const L = 140, Rr = 190, RW = w - L - Rr, top = 64, RH = Math.min(30, (h - top - 30) / CAL.righe.length), X = d => L + (d - CAL.t0) / CAL.ORIZ * RW;
+  c.font = '11px ui-monospace,Menlo,monospace'; c.fillStyle = '#e6eef5'; c.textAlign = 'left'; c.fillText('Calendario delle finestre · clicca una rotta per pianificarla', 12, 18); c.fillStyle = '#6f8aa0'; c.fillText('le barre sono i periodi in cui conviene partire; più luminose = meno propellente', 12, 33);
+  for (let a = 0; a <= 10; a++) { const x = X(CAL.t0 + a * 365.25); c.strokeStyle = '#16222f'; c.beginPath(); c.moveTo(x, top - 4); c.lineTo(x, top + CAL.righe.length * RH); c.stroke(); c.fillStyle = '#6f8aa0'; c.textAlign = 'center'; c.fillText(a === 0 ? 'ora' : '+' + a + ' a', x, top + CAL.righe.length * RH + 14); }
+  CAL.righe.forEach((r, i) => {
+    const y = top + i * RH; c.textAlign = 'left'; c.fillStyle = '#e6eef5'; c.fillText(r.nome, 12, y + RH / 2 + 3); c.strokeStyle = '#141c27'; c.beginPath(); c.moveTo(L, y + RH - 0.5); c.lineTo(L + RW, y + RH - 0.5); c.stroke();
+    let i0 = null, prossima = null; const lim = 1.22 * r.mn;
+    for (let k = 0; k < r.serie.length; k++) { const ok = r.serie[k] <= lim, fin = k === r.serie.length - 1; if (ok && i0 === null) i0 = k;
+      if ((!ok || fin) && i0 !== null) { const k1 = ok && fin ? k : k - 1; let best = Infinity; for (let q = i0; q <= k1; q++) best = Math.min(best, r.serie[q]); const x0 = X(CAL.t0 + i0 * CAL.STEP), x1 = X(CAL.t0 + (k1 + 1) * CAL.STEP);
+        if (x0 < L + RW) { c.fillStyle = '#1f9bbb'; c.globalAlpha = 0.45 + 0.5 * Math.max(0, Math.min(1, (lim - best) / (0.22 * r.mn))); c.fillRect(x0, y + 5, Math.max(4, Math.min(x1, L + RW) - x0), RH - 10); c.globalAlpha = 1; }
+        if (prossima === null && CAL.t0 + (k1 + 1) * CAL.STEP > t + Tempo.ALONE_D) prossima = Math.max(CAL.t0 + i0 * CAL.STEP, t + Tempo.ALONE_D); i0 = null; } }
+    c.textAlign = 'left'; c.fillStyle = r.pronta ? '#9fb4c8' : '#6f8aa0'; c.fillText(!r.pronta ? 'calcolo…' : prossima === null ? 'nessuna entro 10 anni' : 'prossima: ' + (prossima - t < 1 ? 'ora' : 'tra ' + fmtGioco(prossima - t)), L + RW + 14, y + RH / 2 + 3);
+    c.fillStyle = '#4b6a85'; c.fillText('ogni ' + (r.sin < 1.5 ? Math.round(r.sin * 12) + ' mesi' : f1(r.sin, 1) + ' anni'), L + RW + 14, y + RH / 2 + 15);
+  });
+  const xn = X(t); c.strokeStyle = '#6bff9a'; c.lineWidth = 2; c.beginPath(); c.moveTo(xn, top - 8); c.lineTo(xn, top + CAL.righe.length * RH); c.stroke(); c.lineWidth = 1; c.fillStyle = 'rgba(107,255,154,0.2)'; c.fillRect(xn, top - 8, Math.max(4, X(t + Tempo.ALONE_D) - xn), CAL.righe.length * RH + 8);
+  c.fillStyle = '#6bff9a'; c.textAlign = 'left'; c.fillText('adesso', xn + 6, top - 12);
+  CAL.hit = { L, RW, top, RH };
+}
+$('btnCal').onclick = () => { const el = $('cal'); el.hidden = !el.hidden; if (!el.hidden && (!CAL.righe || t - CAL.t0 > 0.3 * CAL.ORIZ)) calcolaCalendario(); mondo.registra('calendario', { aperto: !el.hidden }); };
+$('calChiudi').onclick = () => { $('cal').hidden = true; };
+$('calcv').addEventListener('click', e => { if (!CAL.hit) return; const r = $('calcv').getBoundingClientRect(), y = e.clientY - r.top, i = Math.floor((y - CAL.hit.top) / CAL.hit.RH); if (i < 0 || i >= CAL.righe.length) return; const q = CAL.righe[i];
+  if ($('pianifica').hidden) apriPian(); $('orig').value = q.a; $('dest').value = q.b; volaVerso({ id: q.a, scale: scalaCorpo(q.a) }); $('cal').hidden = true; $('cerca').focus(); mondo.registra('calendario_rotta', { orig: q.a, dest: q.b }); });
+// ======================================================================================================
+//  CICLO PRINCIPALE
+// ======================================================================================================
+let ultimoMs = Date.now(), nSalva = 0;
+function tick() { const n = Date.now(), dt = (n - ultimoMs) / 1000; ultimoMs = n; if (dt > 0) mondo.avanza(dt); t = mondo.t; }
+function aggiornaUI() { aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
+function frame(now) { tick(); aggiornaAnim(now); disegna(); aggiornaUI(); if (!$('cal').hidden) { passoCalendario(); disegnaCal(); } if (++nSalva % 60 === 0) salva(); requestAnimationFrame(frame); }
+setInterval(() => { if (document.hidden) { tick(); aggiornaUI(); salva(); } }, 1000);      // scheda in secondo piano: il tempo e gli avvisi continuano a 1:1
 setInterval(posSlider, 60);
-function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (!paused) t += velEffettiva() * dt; aggiornaAnim(now); disegna(); requestAnimationFrame(frame);
-}
-agg(); setView('interno'); requestAnimationFrame(frame);
-cercaFinestre();
+setView('interno'); aggiornaLista(true); requestAnimationFrame(frame);
 </script></body></html>
