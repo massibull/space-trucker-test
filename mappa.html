@@ -59,7 +59,8 @@
   #cal{position:absolute;left:0;right:0;bottom:48px;height:318px;background:rgba(8,17,26,.97);border-top:1px solid #27455f;z-index:4}
   #cal canvas{width:100%;height:100%;display:block;cursor:pointer} #calChiudi{position:absolute;right:8px;top:6px;z-index:2}
   .pren{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:5px 0;line-height:1.5}
-  .pren.fine{opacity:.6;border-color:#1d2a38} .pren.att{border-color:#ffb347}
+  .pren{cursor:pointer} .pren.sel{border-color:#7fe7ff;box-shadow:0 0 0 1px rgba(127,231,255,.35)}
+  .pren.fine{opacity:.6;border-color:#1d2a38;cursor:default} .pren.att{border-color:#ffb347}
   .pren .t{color:#e6eef5;font-size:12.5px} .pren .s{color:#9fb4c8;font-size:11px} .pren button{padding:3px 10px;margin:4px 6px 0 0;font-size:11.5px}
   .pren button.ok{background:#1e6b3a;border-color:#6bff9a;color:#fff} .pren button:disabled{opacity:.5}
   #regTxt{white-space:pre-wrap;font-size:10px;color:#9fb4c8;max-height:220px;overflow:auto;margin:6px 0;background:#070d14;padding:6px}
@@ -462,14 +463,16 @@ const MODI = { essenziale: 'Mappa essenziale', selezione: 'Mappa a selezione', c
 let modoV = 'selezione'; try { const x = localStorage.getItem(CHIAVE_VISTA); if (MODI[x]) modoV = x; } catch (e) {}
 for (const k in MODI) $('modoVista').add(new Option(MODI[k], k)); $('modoVista').value = modoV;
 $('modoVista').onchange = e => { const da = modoV; modoV = e.target.value; try { localStorage.setItem(CHIAVE_VISTA, modoV); } catch (er) {} mondo.registra('vista', { da, a: modoV }); e.target.blur(); };
-function corpiInFocus() {                                                              // pianeti e rocce "attivi": camera su di loro, scelti nel pianificatore, o con un viaggio prenotato
+function corpiInFocus() {                                                              // pianeti e rocce "attivi": camera su di loro, scelti nel pianificatore, o estremi del viaggio selezionato
   const f = new Set(), id = c => c && (c.id || c);
   if (view.follow) f.add(view.follow); if (anim && anim.dest && anim.dest.id) f.add(anim.dest.id);
   if (!$('pianifica').hidden) { f.add($('orig').value); f.add($('dest').value); }
   if (sel) { f.add(id(sel.orig)); f.add(id(sel.dest)); }
-  for (const p of mondo.attivi()) { f.add(p.orig); f.add(p.dest); }
+  const vs = mondo.pren.find(p => p.id === viaggioSel); if (vs) { f.add(vs.orig); f.add(vs.dest); }
   return f;
 }
+let viaggioSel = null;                                                                 // id del viaggio prenotato selezionato (dall'elenco o cliccando la nave)
+function selezionaViaggio(id) { viaggioSel = (id === null || viaggioSel === id) ? null : id; mondo.registra('viaggio_sel', { pren: viaggioSel || 0 }); $('listaPren') && aggiornaLista(true); }
 
 const mondo = new Tempo.Mondo(O.giorni(2412, 1, 1));
 let t = mondo.t, W = 1, H = 1, dpr = 1;
@@ -553,9 +556,11 @@ ztrack.addEventListener('pointerup', () => { sdrag = false; $('zoom').classList.
 $('zin').onclick = () => zoomAt(1.5); $('zout').onclick = () => zoomAt(1 / 1.5);
 addEventListener('keydown', e => { if (e.target && /INPUT|SELECT/.test(e.target.tagName)) return; if (e.key === '+' || e.key === '=') zoomAt(1.3); if (e.key === '-' || e.key === '_') zoomAt(1 / 1.3); });
 let drag = null;
-cv.addEventListener('mousedown', e => { fermaVolo(); drag = [e.clientX, e.clientY]; cv.style.cursor = 'grabbing'; });
+let dragTot = 0;
+cv.addEventListener('mousedown', e => { fermaVolo(); drag = [e.clientX, e.clientY]; dragTot = 0; cv.style.cursor = 'grabbing'; });
+cv.addEventListener('click', e => { if (dragTot > 4) return; const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top; const n = navi.find(q => Math.hypot(q.x - x, q.y - y) < 14); if (n) selezionaViaggio(n.id); else if (viaggioSel !== null) selezionaViaggio(null); });
 addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
-addEventListener('mousemove', e => { if (!drag) return; view.cx -= (e.clientX - drag[0]) / view.scale; view.cy += (e.clientY - drag[1]) / view.scale; drag = [e.clientX, e.clientY]; });
+addEventListener('mousemove', e => { if (!drag) return; dragTot += Math.abs(e.clientX - drag[0]) + Math.abs(e.clientY - drag[1]); view.cx -= (e.clientX - drag[0]) / view.scale; view.cy += (e.clientY - drag[1]) / view.scale; drag = [e.clientX, e.clientY]; });
 
 // ---- pianificazione ----
 let gr = null, sel = null, missione = null;
@@ -773,7 +778,7 @@ function disegnaFascia() {
   ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(150,195,215,0.75)';
   const ang = -Math.PI / 3, lx = sx(3.6 * AU * Math.cos(ang)), ly = sy(3.6 * AU * Math.sin(ang)); if (ly > 8 && ly < H - 8 && lx > 0 && lx < W) ctx.fillText('FASCIA PRINCIPALE', lx, ly);
   const rl = px(2.0);                                                                      // limite di sicurezza della torcia (bordo interno della fascia)
-  if (rl > 24 && rl < 8000) { ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(255,179,71,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(sx(0), sy(0), rl, 0, 7); ctx.stroke(); ctx.restore();
+  if (modoV === 'completa' && rl > 24 && rl < 8000) { ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(255,179,71,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(sx(0), sy(0), rl, 0, 7); ctx.stroke(); ctx.restore();
     const ty = sy(2.0 * AU), tx = sx(0); if (ty > 8 && ty < H - 8 && tx > 0 && tx < W) { ctx.fillStyle = 'rgba(255,179,71,0.8)'; ctx.fillText('limite della torcia', tx, ty + 14); } }
   ctx.textAlign = 'left';
 }
@@ -794,6 +799,34 @@ function disegnaStazione(x, y, r) {                                             
   ctx.beginPath(); ctx.moveTo(sx0 - 5, sy0 + 5); ctx.lineTo(x + r * 0.7, y - r * 0.7); ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
 }
 
+// Traiettoria: linea continua e sottile; un impulso di luce la percorre dall'inizio alla fine con andatura morbida (ease), e ricomincia.
+function traiettoriaAnimata(pts, rgb, a0, a1) {
+  const P = pts.map(([x, y]) => [sx(x), sy(y)]), n = P.length - 1; if (n < 1) return;
+  const Ls = [0]; for (let i = 0; i < n; i++) Ls.push(Ls[i] + Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1])); const tot = Ls[n]; if (tot < 2) return;
+  const w = 0.16, c = -w + (1 + 2 * w) * ease((performance.now() % 4200) / 4200);
+  ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) { const u = (Ls[i] + Ls[i + 1]) / 2 / tot, k = Math.exp(-Math.pow((u - c) / (w * 0.6), 2));
+    ctx.strokeStyle = 'rgba(' + rgb + ',' + (a0 + (a1 - a0) * k).toFixed(3) + ')'; ctx.beginPath(); ctx.moveTo(P[i][0], P[i][1]); ctx.lineTo(P[i + 1][0], P[i + 1][1]); ctx.stroke(); }
+  ctx.lineCap = 'butt'; ctx.lineWidth = 1;
+}
+// Etichette dei corpi: se due si sovrappongono, la meno importante si sposta (con un movimento dolce) in un altro punto attorno al suo corpo
+const LAB = {};
+function disegnaEtichette(E) {
+  ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left'; const LH = 12, occ = []; E.sort((a, b) => a.pri - b.pri || a.x - b.x);
+  for (const e of E) {
+    const w = Math.max(...e.L.map(l => ctx.measureText(l[0]).width)), h = e.L.length * LH, r = e.r + 8, cand = [];
+    for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([r, -6 + dy]);
+    for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([-(r + w), -6 + dy]);
+    cand.push([-w / 2, e.r + 8], [-w / 2, -e.r - 8 - h]);
+    const libero = k => { const R = { x: e.x + cand[k][0] - 2, y: e.y + cand[k][1] - 2, w: w + 4, h: h + 4 }; return !occ.some(o => R.x < o.x + o.w && R.x + R.w > o.x && R.y < o.y + o.h && R.y + R.h > o.y); };
+    let k = cand.findIndex((_, i) => libero(i)); if (k < 0) k = 0;
+    const st = LAB[e.id] || (LAB[e.id] = { dx: cand[k][0], dy: cand[k][1] }); st.dx += (cand[k][0] - st.dx) * 0.2; st.dy += (cand[k][1] - st.dy) * 0.2;
+    occ.push({ x: e.x + cand[k][0] - 2, y: e.y + cand[k][1] - 2, w: w + 4, h: h + 4 });
+    if (k > 0) { const lx = e.x + st.dx + (st.dx < 0 ? w : 0), ly = e.y + st.dy + h / 2, d = Math.hypot(lx - e.x, ly - e.y) || 1; ctx.strokeStyle = 'rgba(159,180,200,0.3)'; ctx.beginPath(); ctx.moveTo(e.x + (lx - e.x) / d * (e.r + 2), e.y + (ly - e.y) / d * (e.r + 2)); ctx.lineTo(lx, ly); ctx.stroke(); }
+    e.L.forEach((l, i) => { ctx.fillStyle = l[1]; ctx.fillText(l[0], e.x + st.dx, e.y + st.dy + 10 + i * LH); });
+  }
+}
+let navi = [];                                                                            // navi disegnate in questo fotogramma (per cliccarle)
 function disegna() {
   ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H); C0 = centro();
   // orbite dei pianeti
@@ -804,10 +837,8 @@ function disegna() {
     const pts = O.orbitaVista(c, t, view.scale, Math.max(W, H)); ctx.strokeStyle = RC[c.id] || (completa ? '#17304a' : '#2d5a80'); ctx.globalAlpha = RC[c.id] ? 0.55 : 1; ctx.beginPath();
     pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.globalAlpha = 1;
   }
-  // traiettoria pianificata
-  if (sel) { const q = [], n = 160; for (let i = 0; i <= n; i++) { const s = O.propaga(sel.r1, sel.v1, sel.tof * DAY * i / n); q.push(s.r); }
-    ctx.strokeStyle = 'rgba(127,231,255,0.5)'; ctx.setLineDash([6, 5]); ctx.beginPath();
-    q.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.setLineDash([]); }
+  // traiettoria pianificata: linea continua sottile con un impulso di luce che corre dalla partenza all'arrivo
+  if (sel) { const q = [], n = 160; for (let i = 0; i <= n; i++) { const s = O.propaga(sel.r1, sel.v1, sel.tof * DAY * i / n); q.push(s.r); } traiettoriaAnimata(q, '127,231,255', 0.32, 1); }
   disegnaFascia();
   // Sole e pianeti: raggio = max(vero, base * (zoom/zoom_inquadratura)^0.26), con base legata al raggio reale (radice 0,3): crescono con lo zoom e, inquadrati, mostrano i loro tratti
   const SREF = 7.3e-7, SINQ = 6e-5, kz = Math.pow(view.scale / SINQ, 0.26);
@@ -816,6 +847,7 @@ function disegna() {
   ctx.fillStyle = gs; ctx.beginPath(); ctx.arc(sx(0), sy(0), rSole * 1.9, 0, 7); ctx.fill();
   ctx.fillStyle = '#ffd37a'; ctx.beginPath(); ctx.arc(sx(0), sy(0), rSole, 0, 7); ctx.fill();
   ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left';
+  const etich = []; navi = [];
   const mostraLune = view.scale > 3e-6, lungheLune = view.scale > 2e-5; let ingrandita = false;
   for (const c of O.CORPI) {
     const s0 = O.stato(c, t), x = sx(s0.x), y = sy(s0.y); if (x < -120 || x > W + 120 || y < -120 || y > H + 120) continue;
@@ -824,10 +856,11 @@ function disegna() {
     if (roccia) disegnaRoccia(c, x, y, rr, [sx(0) - x, sy(0) - y]); else disegnaPianeta(c, x, y, rr, [sx(0) - x, sy(0) - y]);
     const rAnelli = c.id === 'saturno' ? rr * 2.3 : rr;
     if (porto) { if (roccia) disegnaStazione(x, y, rr); else { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(x, y, rr + 5, 0, 7); ctx.stroke(); } }
-    const attivo = completa || FOC.has(c.id);
-    if (!roccia || attivo || view.scale > 5e-7) { ctx.fillStyle = RC[c.id] || '#9fb4c8'; ctx.fillText(c.nome + (c.fasefittizia ? '*' : ''), x + rAnelli + 8, y + 4); }
-    if (roccia && attivo) { ctx.fillStyle = '#6f8aa0'; ctx.fillText(c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', x + rAnelli + 8, y + 16); }
-    if (porto && (attivo || view.scale > 3e-6)) { ctx.fillStyle = '#6bff9a'; ctx.fillText((roccia ? '◎ stazione ' : '◎ porto ') + porto, x + rAnelli + 8, y + (roccia ? 28 : 17)); }
+    const attivo = completa || (modoV === 'selezione' && FOC.has(c.id)), Lb = [];
+    if (!roccia || attivo || view.scale > 5e-7) Lb.push([c.nome + (c.fasefittizia ? '*' : ''), RC[c.id] || '#9fb4c8']);
+    if (roccia && attivo) Lb.push([c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', '#6f8aa0']);
+    if (porto && (attivo || view.scale > 3e-6)) Lb.push([(roccia ? '◎ stazione ' : '◎ porto ') + porto, '#6bff9a']);
+    if (Lb.length) etich.push({ id: c.id, x, y, r: rAnelli, L: Lb, pri: FOC.has(c.id) ? 0 : roccia ? 2 : 1 });
     if (!mostraLune) continue;
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
@@ -840,6 +873,7 @@ function disegna() {
       if (lungheLune) { ctx.fillStyle = '#7f98ae'; ctx.fillText(l.nome + (rapida ? ' (orbita rapida)' : ''), lx + rl + 7, ly + 3); if (O.PORTI[l.id]) { ctx.fillStyle = '#6bff9a'; ctx.fillText('◎ porto ' + O.PORTI[l.id], lx + rl + 7, ly + 16); } }
     });
   }
+  disegnaEtichette(etich);
   // posizioni dei corpi alla partenza e all'arrivo del piano scelto
   if (sel) for (const [c, tt, et] of [[sel.orig, sel.tDep, 'partenza'], [sel.dest, sel.tDep + sel.tof, 'arrivo']]) {
     const q = O.stato(c, tt), gx = sx(q.x), gy = sy(q.y); ctx.strokeStyle = '#7fe7ff'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(gx, gy, 9, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -851,9 +885,10 @@ function disegna() {
     let pos; if (p.stato === 'prenotata') { const q = O.stato(O.per_id[p.orig], t); pos = [q.x, q.y]; }
     else if (p.stato === 'in volo') pos = O.propaga(p.r1, p.v1, Math.max(0, (t - p.tDep)) * DAY).r;
     else { const q = O.stato(O.per_id[p.dest], t); pos = [q.x, q.y]; }
-    if (p.stato !== 'in orbita') { const tr = trajPren(p); ctx.strokeStyle = p.stato === 'in volo' ? 'rgba(107,255,154,0.55)' : 'rgba(255,179,71,0.35)'; ctx.setLineDash([5, 5]); ctx.beginPath(); tr.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.setLineDash([]); }
-    const x = sx(pos[0]), y = sy(pos[1]); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1;
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(O.FLOTTA[p.nave].nome, x + 12, y - 8);
+    const mia = viaggioSel === p.id;
+    if (p.stato !== 'in orbita' && (mia || completa)) traiettoriaAnimata(trajPren(p), p.stato === 'in volo' ? '107,255,154' : '255,179,71', 0.3, 1);
+    const x = sx(pos[0]), y = sy(pos[1]); navi.push({ id: p.id, x, y }); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, mia ? 4 : 3, 0, 7); ctx.fill();
+    if (mia || completa) { ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(O.FLOTTA[p.nave].nome, x + 12, y - 8); }
   }
   // scala
   const ua = view.scale * AU; ctx.fillStyle = '#7f98ae'; ctx.textAlign = 'right';
@@ -922,6 +957,7 @@ $('parti').onclick = () => {
   if (!sel || !gr) return; const N = naveSel(); const mn = Math.min(...(gr.finestre || []).map(f => f.dv)), prima = (gr.finestre || [])[0];
   const scelta = (gr.finestre || []).some(f => f.tDep === sel.tDep) ? (Math.abs(sel.dv - mn) < 1e-6 ? 'economica' : (prima && prima.tDep === sel.tDep ? 'prima' : 'altra')) : 'libera';
   const r = mondo.prenota(sel, N.id, { scelta }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
+  viaggioSel = r.pren.id;
   toast('Lancio prenotato: ' + N.nome + ', ' + nomeCorpo(r.pren.orig) + ' → ' + nomeCorpo(r.pren.dest) + '. I preparativi sono iniziati.', 6000); chiudiPian(false); aggiornaLista(true);
 };
 // ---- elenco dei viaggi prenotati
@@ -935,11 +971,13 @@ function aggiornaLista(forza) {
     else box.innerHTML = att.map(p => `<div class="pren" id="pr${p.id}"><div class="t"><b>${O.FLOTTA[p.nave].nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s" id="ps${p.id}"></div>
       <button id="pb${p.id}" data-p="${p.id}" data-a="${p.stato === 'prenotata' ? 'partenza' : 'arrivo'}"></button>${p.stato === 'prenotata' ? `<button id="pa${p.id}" data-p="${p.id}">Annulla</button>` : ''}</div>`).join('')
       + chiusi.map(p => `<div class="pren fine"><div class="t">${O.FLOTTA[p.nave].nome} · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${{ conclusa: 'conclusa', mancata: 'lancio mancato · finestra persa', annullata: 'annullata' }[p.stato] || p.stato}</div></div>`).join('');
+    box.querySelectorAll('.pren[id^=pr]').forEach(el => { el.onclick = e => { if (e.target.tagName !== 'BUTTON') selezionaViaggio(+el.id.slice(2)); }; });
     box.querySelectorAll('button[id^=pb]').forEach(b => { b.onclick = () => { mondo.premi(+b.dataset.p, b.dataset.a); aggiornaLista(true); }; });
     box.querySelectorAll('button[id^=pa]').forEach(b => { b.onclick = () => { if (confirm('Annullare la prenotazione? Può avere una penale provvisoria.')) { const r = mondo.annulla(+b.dataset.p); toast(r.ok ? 'Prenotazione annullata' + (r.penale ? ' (penale provvisoria ' + r.penale + ' cr)' : ' senza penale') + '.' : 'Non si può annullare ora.'); aggiornaNavi(); aggiornaLista(true); } }; });
   }
-  const vu = mondo.velUtente();
+  const vu = mondo.velUtente(); if (viaggioSel !== null && !att.some(p => p.id === viaggioSel)) viaggioSel = null;
   for (const p of att) {
+    const card = $('pr' + p.id); if (card) card.classList.toggle('sel', p.id === viaggioSel);
     const s = $('ps' + p.id), b = $('pb' + p.id); if (!s || !b) continue; const ap = p.stato === 'prenotata' ? p.dep : p.arr, R = (ap.tEv - t) * 86400, nome = ap.tipo === 'partenza' ? 'Parti' : 'Completa missione';
     b.textContent = nome; b.className = '';
     if (p.stato === 'in orbita') { s.textContent = 'In orbita: attende l\'attracco.'; b.disabled = false; b.className = 'ok'; }
