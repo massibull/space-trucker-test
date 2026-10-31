@@ -902,7 +902,7 @@ mondo.on = (tipo, ...a) => {
 function inviaEvento(e) {
   if (!INVIO_ATTIVO || !LOG_URL || ['localhost', '127.0.0.1', ''].includes(location.hostname)) return;
   const d = Object.assign({}, e); const base = { type: 'mappa', session: SESSIONE, build: BUILD, evento: d.tipo, tgioco: fmtTempo(d.t), treale: d.tr }; delete d.tipo; delete d.t; delete d.tr;
-  const chiavi = Object.keys(d); chiavi.slice(0, 6).forEach((k, i) => { base['d' + (i + 1)] = k + '=' + d[k]; });
+  const chiavi = Object.keys(d); chiavi.slice(0, 8).forEach((k, i) => { base['d' + (i + 1)] = k + '=' + d[k]; });
   try { fetch(LOG_URL, { method: 'POST', mode: 'no-cors', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(base) }); } catch (er) {}
 }
 function mostraAssenza(r, dt) {
