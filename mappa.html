@@ -75,6 +75,7 @@
       <span id="tempoUI"><span id="velEt"></span><input type="range" id="velSl" min="0" max="1000" value="0"><span id="velPresets"></span></span>
       <button id="btnCal">Calendario finestre</button>
       <select id="view" style="width:auto;display:inline-block"></select>
+      <select id="modoVista" style="width:auto;display:inline-block" title="Quante orbite e nomi mostrare"></select>
     </div></div>
   <div id="panel">
     <h1>SPACE TRUCKER · pianificatore</h1>
@@ -103,7 +104,7 @@
       <div id="regSint" class="small" style="margin-top:6px"></div><pre id="regTxt"></pre>
       <button id="regCopia">Copia il registro</button> <button id="nuovaProva">Nuova prova</button>
     </details>
-        <div class="small nota">Prototipo di prova, build 6 del 31 ottobre 2026. Non è il gioco finale: i valori delle navi, dei costi e delle penali sono provvisori. Il progresso è salvato nel tuo browser. La prova registra dati di utilizzo anonimi (azioni nella mappa, nessun dato personale) per capire come viene usata.</div>
+        <div class="small nota">Prototipo di prova, build 7 del 31 ottobre 2026. Non è il gioco finale: i valori delle navi, dei costi e delle penali sono provvisori. Il progresso è salvato nel tuo browser. La prova registra dati di utilizzo anonimi (azioni nella mappa, nessun dato personale) per capire come viene usata.</div>
   </div>
 </div>
 <script>
@@ -322,7 +323,7 @@
    Unita': il tempo di gioco t e' in GIORNI (come nella mappa); la velocita' v e' in SECONDI DI GIOCO PER SECONDO REALE (1 = tempo reale, 86400 = 1 giorno al secondo).
    Regole: vedi docs/design-tempo.md e docs/piano-mappa-tempo.md. */
 (function (root) {
-  const DAY = 86400, PRE = 30, RIT = 30, CONTO = 10, K = 0.62, STALLO = 2, PASSO = 0.2;
+  const DAY = 86400, PRE = 30, PRE_BG = 120, RAMPA = 2, RIT = 30, CONTO = 10, K = 0.62, STALLO = 2, PASSO = 0.2;
   const ALONE_D = 5 / 24, MAXPREN = 5, VMAX = 86400;
   const PRESET = [{ nome: 'tempo reale', v: 1 }, { nome: 'oraria', v: 60 }, { nome: 'giornaliera', v: 1440 }, { nome: 'di gioco', v: 86400 }];
   const PENALI = { ritardoAlSecondo: 50, partenzaMancata: 5000, arrivoMancato: 2000, annullaMax: 3000 };     // crediti PROVVISORI e inventati
@@ -347,7 +348,7 @@
     constructor(t0) {
       this.t = t0; this.vel = 1; this.forzato = false; this.tr = 0; this.pren = []; this.log = []; this.seq = 1; this.penali = 0;
       this.stat = { ricerche: 0, prenotazioni: 0, annullamenti: 0, reazioni: [], mancati: 0, ritardi: 0, velSec: {}, pianifSec: 0, inizioMs: 0 };
-      this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
+      this.nascosta = false; this.rampaTr = -1e9; this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
     }
     velUtente() { return this.forzato ? 1 : Math.max(1, Math.min(VMAX, this.vel)); }
     registra(tipo, dati) { const e = Object.assign({ tr: +this.tr.toFixed(2), t: this.t, tipo }, dati || {}); this.log.push(e); if (this.log.length > 800) this.log.shift(); this.on('log', e); return e; }
@@ -358,6 +359,7 @@
     velEffettiva() {
       let v = this.velUtente();
       for (const p of this.pren) for (const ap of [p.dep, p.arr]) { if (!ap) continue; if (ap.stato === 'preavviso') v = Math.min(v, vLegge((ap.tEv - this.t) * DAY, ap.vLock)); else if (ap.stato === 'ritardo') v = 1; }       // in ritardo il tempo resta a 1:1
+      const fr = (this.tr - this.rampaTr) / RAMPA; if (fr < 1) v = Math.min(v, Math.exp(Math.log(VMAX) * Math.max(0, fr)));      // dopo un appuntamento la velocita' scelta torna con una rampa di RAMPA secondi
       return Math.max(1, Math.min(v, this.tetto()));
     }
     inPreavviso() { return this.pren.some(p => [p.dep, p.arr].some(ap => ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo'))); }
@@ -374,7 +376,7 @@
     }
     macchina(p, ap) {
       const R = (ap.tEv - this.t) * DAY, vu = this.velUtente();
-      if (ap.stato === 'attesa') { if (toGo(R, vu) <= PRE) { ap.stato = 'preavviso'; ap.preTr = this.tr; ap.vLock = vu; this.registra('preavviso', { pren: p.id, app: ap.tipo }); this.on('preavviso', p, ap); } }
+      if (ap.stato === 'attesa') { if (toGo(R, vu) <= (this.nascosta ? PRE_BG : PRE)) { ap.stato = 'preavviso'; ap.preTr = this.tr; ap.vLock = vu; this.registra('preavviso', this.nascosta ? { pren: p.id, app: ap.tipo, bg: 1 } : { pren: p.id, app: ap.tipo }); this.on('preavviso', p, ap); } }
       if (ap.stato === 'preavviso' && R <= 0) { if (ap.premuto) this.esito(p, ap, 'riuscito'); else { ap.stato = 'ritardo'; ap.ritTr = this.tr; this.registra('ritardo_inizio', { pren: p.id, app: ap.tipo }); this.on('ritardo', p, ap); } }
       else if (ap.stato === 'ritardo' && this.tr - ap.ritTr >= RIT) this.esito(p, ap, 'mancato');
     }
@@ -396,7 +398,7 @@
       this.penali += pen || 0; ap.pen = pen || 0;
       if (ap.tipo === 'partenza') p.stato = (e === 'mancato') ? 'mancata' : 'in volo';
       else p.stato = (e === 'mancato') ? 'in orbita' : 'conclusa';
-      this.vel = 1;                                                                  // dopo un appuntamento il tempo resta a 1:1 finche' il giocatore non lo cambia
+      this.rampaTr = this.tr;                                                        // dopo l'appuntamento il tempo torna alla velocita' scelta prima (vel non e' toccata)
       this.registra('esito', { pren: p.id, app: ap.tipo, esito: e, ritardo: ritardoSec || 0, penale: pen || 0 }); this.on('esito', p, ap, e, pen, ritardoSec);
     }
     // ---------------------------------------------------------------- prenotazioni
@@ -437,7 +439,7 @@
       return trascorso > 0 ? this.assenza(trascorso) : [];
     }
   }
-  const API = { DAY, PRE, RIT, CONTO, K, STALLO, ALONE_D, MAXPREN, VMAX, PRESET, PENALI, vLegge, toGo, velDaSlider, sliderDaVel, bucketVel, Mondo };
+  const API = { DAY, PRE, PRE_BG, RAMPA, RIT, CONTO, K, STALLO, ALONE_D, MAXPREN, VMAX, PRESET, PENALI, vLegge, toGo, velDaSlider, sliderDaVel, bucketVel, Mondo };
   if (typeof module !== 'undefined') module.exports = API; else root.Tempo = API;
 })(this);
 
@@ -454,7 +456,20 @@ for (const id of ['orig', 'dest']) ZONE.forEach(([nome, ids]) => { const og = do
   ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + (O.PORTI[c.id] ? '  (' + (ROCCE.includes(i) ? 'stazione ' : 'porto ') + O.PORTI[c.id] + ')' : ''), c.id); og.appendChild(op); });
   $(id).appendChild(og); });
 $('orig').value = 'terra'; $('dest').value = 'marte';
-const BUILD = 6;
+const BUILD = 7;
+// ---- modalita' di visualizzazione: essenziale (solo pianeti), a selezione (orbite e nomi di cio' che scegli o di cui hai un viaggio), completa (tutto)
+const MODI = { essenziale: 'Mappa essenziale', selezione: 'Mappa a selezione', completa: 'Mappa completa' }, CHIAVE_VISTA = 'st_mappa_vista_v1';
+let modoV = 'selezione'; try { const x = localStorage.getItem(CHIAVE_VISTA); if (MODI[x]) modoV = x; } catch (e) {}
+for (const k in MODI) $('modoVista').add(new Option(MODI[k], k)); $('modoVista').value = modoV;
+$('modoVista').onchange = e => { const da = modoV; modoV = e.target.value; try { localStorage.setItem(CHIAVE_VISTA, modoV); } catch (er) {} mondo.registra('vista', { da, a: modoV }); e.target.blur(); };
+function corpiInFocus() {                                                              // pianeti e rocce "attivi": camera su di loro, scelti nel pianificatore, o con un viaggio prenotato
+  const f = new Set(), id = c => c && (c.id || c);
+  if (view.follow) f.add(view.follow); if (anim && anim.dest && anim.dest.id) f.add(anim.dest.id);
+  if (!$('pianifica').hidden) { f.add($('orig').value); f.add($('dest').value); }
+  if (sel) { f.add(id(sel.orig)); f.add(id(sel.dest)); }
+  for (const p of mondo.attivi()) { f.add(p.orig); f.add(p.dest); }
+  return f;
+}
 
 const mondo = new Tempo.Mondo(O.giorni(2412, 1, 1));
 let t = mondo.t, W = 1, H = 1, dpr = 1;
@@ -783,8 +798,10 @@ function disegna() {
   ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H); C0 = centro();
   // orbite dei pianeti
   ctx.lineWidth = 1;
+  const FOC = corpiInFocus(), completa = modoV === 'completa';
   for (const c of O.CORPI) {
-    const pts = O.orbitaVista(c, t, view.scale, Math.max(W, H)); ctx.strokeStyle = RC[c.id] || '#17304a'; ctx.globalAlpha = RC[c.id] ? 0.55 : 1; ctx.beginPath();
+    if (!(completa || (modoV === 'selezione' && FOC.has(c.id)))) continue;
+    const pts = O.orbitaVista(c, t, view.scale, Math.max(W, H)); ctx.strokeStyle = RC[c.id] || (completa ? '#17304a' : '#2d5a80'); ctx.globalAlpha = RC[c.id] ? 0.55 : 1; ctx.beginPath();
     pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.globalAlpha = 1;
   }
   // traiettoria pianificata
@@ -807,9 +824,10 @@ function disegna() {
     if (roccia) disegnaRoccia(c, x, y, rr, [sx(0) - x, sy(0) - y]); else disegnaPianeta(c, x, y, rr, [sx(0) - x, sy(0) - y]);
     const rAnelli = c.id === 'saturno' ? rr * 2.3 : rr;
     if (porto) { if (roccia) disegnaStazione(x, y, rr); else { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(x, y, rr + 5, 0, 7); ctx.stroke(); } }
-    ctx.fillStyle = RC[c.id] || '#9fb4c8'; ctx.fillText(c.nome + (c.fasefittizia ? '*' : ''), x + rAnelli + 8, y + 4);
-    if (roccia) { ctx.fillStyle = '#6f8aa0'; ctx.fillText(c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', x + rAnelli + 8, y + 16); }
-    if (porto && (roccia || view.scale > 6e-7)) { ctx.fillStyle = '#6bff9a'; ctx.fillText((roccia ? '◎ stazione ' : '◎ porto ') + porto, x + rAnelli + 8, y + (roccia ? 28 : 17)); }
+    const attivo = completa || FOC.has(c.id);
+    if (!roccia || attivo || view.scale > 5e-7) { ctx.fillStyle = RC[c.id] || '#9fb4c8'; ctx.fillText(c.nome + (c.fasefittizia ? '*' : ''), x + rAnelli + 8, y + 4); }
+    if (roccia && attivo) { ctx.fillStyle = '#6f8aa0'; ctx.fillText(c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', x + rAnelli + 8, y + 16); }
+    if (porto && (attivo || view.scale > 3e-6)) { ctx.fillStyle = '#6bff9a'; ctx.fillText((roccia ? '◎ stazione ' : '◎ porto ') + porto, x + rAnelli + 8, y + (roccia ? 28 : 17)); }
     if (!mostraLune) continue;
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
@@ -969,7 +987,9 @@ $('regDet').addEventListener('toggle', () => { if ($('regDet').open) { $('regTxt
 // ---- salvataggio e rientro
 function salva() { try { localStorage.setItem(CHIAVE, JSON.stringify(mondo.serializza(Date.now()))); } catch (e) {} }
 addEventListener('pagehide', salva);
-document.addEventListener('visibilitychange', () => { if (document.hidden) { if (mondo.vel > 1) { mondo.vel = 1; } mondo.registra('visibilita', { stato: 'nascosta' }); salva(); } else { mondo.registra('visibilita', { stato: 'visibile' }); } });
+mondo.nascosta = document.hidden;
+document.addEventListener('visibilitychange', () => { tick(); mondo.nascosta = document.hidden;                       // scheda in secondo piano: il tempo prosegue alla velocita' scelta; l'avviso arriva prima (120 s)
+  if (document.hidden) { mondo.registra('visibilita', { stato: 'nascosta', vel: Tempo.bucketVel(mondo.vel) }); salva(); } else mondo.registra('visibilita', { stato: 'visibile' }); });
 { let salvato = null; try { const x = localStorage.getItem(CHIAVE); if (x) salvato = JSON.parse(x); } catch (e) {}
   mondo.stat.inizioMs = Date.now();
   if (salvato) { const inizio = salvato.stat && salvato.stat.inizioMs; mondo.ripristina(salvato, Date.now()); if (inizio) mondo.stat.inizioMs = inizio; mondo.registra('ripresa', { build: BUILD }); t = mondo.t; }
@@ -1018,7 +1038,11 @@ let ultimoMs = Date.now(), nSalva = 0;
 function tick() { const n = Date.now(), dt = (n - ultimoMs) / 1000; ultimoMs = n; if (dt > 0) mondo.avanza(dt); t = mondo.t; }
 function aggiornaUI() { aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
 function frame(now) { tick(); aggiornaAnim(now); disegna(); aggiornaUI(); if (!$('cal').hidden) { passoCalendario(); disegnaCal(); } if (++nSalva % 60 === 0) salva(); requestAnimationFrame(frame); }
-setInterval(() => { if (document.hidden) { tick(); aggiornaUI(); salva(); } }, 1000);      // scheda in secondo piano: il tempo e gli avvisi continuano a 1:1
+// Scheda in secondo piano: il browser rallenta i timer della pagina (anche a 1 al minuto), e un tick distanziato oltre 2 s conterebbe come assenza.
+// Per questo il battito di 1 s arriva da un Web Worker, che il browser non rallenta; se non e' disponibile si ripiega sul timer normale.
+function battito() { if (document.hidden) { tick(); aggiornaUI(); salva(); } }
+(function () { let w = null, ripiego = () => { if (!ripiego.fatto) { ripiego.fatto = true; setInterval(battito, 1000); } };
+  try { w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},1000)'], { type: 'text/javascript' }))); w.onmessage = battito; w.onerror = ripiego; } catch (e) { ripiego(); } })();
 setInterval(posSlider, 60);
 setView('interno'); aggiornaLista(true); requestAnimationFrame(frame);
 </script></body></html>
