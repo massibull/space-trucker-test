@@ -805,7 +805,8 @@ function traiettoriaAnimata(pts, rgb, a0, a1) {
   const Ls = [0]; for (let i = 0; i < n; i++) Ls.push(Ls[i] + Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1])); const tot = Ls[n]; if (tot < 2) return;
   const w = 0.16, c = -w + (1 + 2 * w) * ease((performance.now() % 4200) / 4200);
   ctx.lineWidth = 1.2; ctx.lineCap = 'round';
-  for (let i = 0; i < n; i++) { const u = (Ls[i] + Ls[i + 1]) / 2 / tot, k = Math.exp(-Math.pow((u - c) / (w * 0.6), 2));
+  for (let i = 0; i < n; i++) { const a = P[i], b = P[i + 1]; if ((a[0] < -50 && b[0] < -50) || (a[0] > W + 50 && b[0] > W + 50) || (a[1] < -50 && b[1] < -50) || (a[1] > H + 50 && b[1] > H + 50)) continue;
+    const u = (Ls[i] + Ls[i + 1]) / 2 / tot, k = Math.exp(-Math.pow((u - c) / (w * 0.6), 2));
     ctx.strokeStyle = 'rgba(' + rgb + ',' + (a0 + (a1 - a0) * k).toFixed(3) + ')'; ctx.beginPath(); ctx.moveTo(P[i][0], P[i][1]); ctx.lineTo(P[i + 1][0], P[i + 1][1]); ctx.stroke(); }
   ctx.lineCap = 'butt'; ctx.lineWidth = 1;
 }
@@ -838,7 +839,7 @@ function disegna() {
     pts.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.stroke(); ctx.globalAlpha = 1;
   }
   // traiettoria pianificata: linea continua sottile con un impulso di luce che corre dalla partenza all'arrivo
-  if (sel) { const q = [], n = 160; for (let i = 0; i <= n; i++) { const s = O.propaga(sel.r1, sel.v1, sel.tof * DAY * i / n); q.push(s.r); } traiettoriaAnimata(q, '127,231,255', 0.32, 1); }
+  if (sel) { traiettoriaAnimata(puntiTraj('s' + (sel.orig.id || sel.orig) + (sel.dest.id || sel.dest) + sel.tDep, sel.r1, sel.v1, sel.tof), '127,231,255', 0.32, 1); }
   disegnaFascia();
   // Sole e pianeti: raggio = max(vero, base * (zoom/zoom_inquadratura)^0.26), con base legata al raggio reale (radice 0,3): crescono con lo zoom e, inquadrati, mostrano i loro tratti
   const SREF = 7.3e-7, SINQ = 6e-5, kz = Math.pow(view.scale / SINQ, 0.26);
@@ -886,7 +887,7 @@ function disegna() {
     else if (p.stato === 'in volo') pos = O.propaga(p.r1, p.v1, Math.max(0, (t - p.tDep)) * DAY).r;
     else { const q = O.stato(O.per_id[p.dest], t); pos = [q.x, q.y]; }
     const mia = viaggioSel === p.id;
-    if (p.stato !== 'in orbita' && (mia || completa)) traiettoriaAnimata(trajPren(p), p.stato === 'in volo' ? '107,255,154' : '255,179,71', 0.3, 1);
+    if (p.stato !== 'in orbita' && (mia || completa)) traiettoriaAnimata(puntiTraj('p' + p.id, p.r1, p.v1, p.tof), p.stato === 'in volo' ? '107,255,154' : '255,179,71', 0.3, 1);
     const x = sx(pos[0]), y = sy(pos[1]); navi.push({ id: p.id, x, y }); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, mia ? 4 : 3, 0, 7); ctx.fill();
     if (mia || completa) { ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(O.FLOTTA[p.nave].nome, x + 12, y - 8); }
   }
@@ -903,6 +904,21 @@ function disegna() {
 const CHIAVE = 'st_mappa_stato_v1', INVIO_ATTIVO = true, LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';   // in locale non invia mai (vedi inviaEvento)
 const SESSIONE = Math.random().toString(36).slice(2, 10);
 const trajCache = new Map();
+// Punti di una traiettoria alla risoluzione che serve a questo zoom (un punto ogni ~4 px), costruiti a pezzi di pochi ms per fotogramma:
+// intanto si usa il livello piu' fine gia' pronto, cosi' la mappa non scatta quando si ingrandisce.
+const trajLiv = new Map();
+function puntiTraj(key, r1, v1, tofGiorni) {
+  let T = trajLiv.get(key); if (!T) { T = { liv: [], build: null }; trajLiv.set(key, T); }
+  const comp = (n, i0, i1, arr) => { for (let i = i0; i <= i1; i++) arr[i] = O.propaga(r1, v1, tofGiorni * DAY * i / n).r; };
+  if (!T.liv.length) { const a = []; comp(96, 0, 96, a); T.liv.push({ n: 96, pts: a }); }
+  const base = T.liv[0].pts; let len = 0; for (let i = 1; i < base.length; i++) len += Math.hypot(sx(base[i][0]) - sx(base[i - 1][0]), sy(base[i][1]) - sy(base[i - 1][1]));
+  let need = 96; while (need < 4096 && need * 4 < len) need *= 2;
+  const ult = T.liv[T.liv.length - 1];
+  if (ult.n < need && !T.build) T.build = { n: ult.n * 2, i: 0, pts: [] };
+  if (T.build) { const B = T.build, fine = performance.now() + 5; while (B.i <= B.n && performance.now() < fine) { const j = Math.min(B.n, B.i + 63); comp(B.n, B.i, j, B.pts); B.i = j + 1; }
+    if (B.i > B.n) { T.liv.push({ n: B.n, pts: B.pts }); T.build = null; } }
+  let best = T.liv[0]; for (const l of T.liv) if (l.n <= Math.max(need, 96)) best = l; return best.pts;
+}
 function trajPren(p) { let tr = trajCache.get(p.id); if (!tr) { tr = []; for (let i = 0; i <= 90; i++) tr.push(O.propaga(p.r1, p.v1, p.tof * DAY * i / 90).r); trajCache.set(p.id, tr); } return tr; }
 const nomeCorpo = id => (O.per_id[id] || {}).nome || id;
 const fmtTempo = d => O.data(d).toISOString().replace('T', ' ').slice(0, 19);
