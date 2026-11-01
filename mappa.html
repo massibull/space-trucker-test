@@ -62,6 +62,13 @@
   #banca b{font-size:15px;color:#fff} #banca button{margin:4px 4px 0 0}
   .chk{display:flex;gap:6px;align-items:flex-start;margin:4px 0;line-height:1.45} .chk input{width:auto;margin-top:2px}
   .contr{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:5px 0;line-height:1.5} .contr .t{color:#e6eef5;font-size:12.5px} .contr .s{color:#9fb4c8;font-size:11px} .contr button{padding:3px 10px;margin:4px 0 0;font-size:11.5px;background:#1e6b3a;border-color:#6bff9a;color:#fff} .contr button:disabled{opacity:.45;background:#16202b;border-color:#27455f}
+  #schermo{position:absolute;left:0;top:0;bottom:112px;width:min(100%,820px);background:#070d15;border-right:1px solid #27455f;border-bottom:1px solid #27455f;z-index:4;display:flex;flex-direction:column}
+  #stab{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid #1d3347;align-items:center;flex-wrap:wrap} #stab .sp{flex:1} #sBody{flex:1;overflow-y:auto;padding:6px 16px 14px} #sBody section[hidden]{display:none}
+  #navBtns{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0} #navBtns button{flex:1;min-width:84px}
+  .riass{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:6px 0;line-height:1.5;cursor:pointer} .riass:hover{border-color:#7fe7ff} .riass .t{color:#e6eef5;font-size:12.5px} .riass .s{color:#9fb4c8;font-size:11px}
+  .dt{color:#6f8aa0;font-size:10px} .bar{height:6px;background:#16202b;margin:3px 0;border:1px solid #27455f} .bar>div{height:100%;background:#6bff9a}
+  table.mov{width:100%;border-collapse:collapse;font-size:11.5px} table.mov td,table.mov th{padding:3px 6px;border-bottom:1px solid #141c27;text-align:left} table.mov th{color:#7f98ae;font-weight:normal} table.mov td.n,table.mov th.n{text-align:right}
+  .pos{color:#6bff9a} .neg{color:#ff8a8a} #sBody h2:first-child{margin-top:8px}
   .pren{cursor:pointer} .pren.sel{border-color:#7fe7ff;box-shadow:0 0 0 1px rgba(127,231,255,.35)}
   .pren.fine{opacity:.6;border-color:#1d2a38;cursor:default} .pren.att{border-color:#ffb347}
   .pren .t{color:#e6eef5;font-size:12.5px} .pren .s{color:#9fb4c8;font-size:11px} .pren button{padding:3px 10px;margin:4px 6px 0 0;font-size:11.5px}
@@ -75,6 +82,44 @@
     <div id="banner" hidden><div id="banTit"></div><div id="banConto"></div><div id="banSub"></div><button id="banBtn">Parti</button></div>
     <div id="toast" hidden></div>
     <div id="cal" hidden><button id="calChiudi">chiudi</button><canvas id="calcv"></canvas></div>
+    <div id="schermo" hidden>
+      <div id="stab"><button data-s="ufficio">Ufficio</button><button data-s="flotta">Flotta</button><button data-s="porto">Porto</button><button data-s="contratti">Contratti</button><button data-s="viaggi">Viaggi</button><span class="sp"></span><button id="sChiudi">Chiudi ✕</button></div>
+      <div id="sBody">
+        <section id="s-ufficio" hidden>
+          <h2>CONTI</h2><div id="uffBanca" class="contr"><div class="t">SALDO <b id="bSaldo"></b></div><div class="s" id="bDebito"></div><button id="bPrest">Prendi un prestito (+5.000)</button> <button id="bRimb">Rimborsa 5.000</button></div>
+          <h2>MOVIMENTI</h2><div id="movim" class="small"></div>
+        </section>
+        <section id="s-flotta" hidden><h2>FLOTTA</h2><div id="flottaBox"></div></section>
+        <section id="s-porto" hidden>
+          <h2>PORTO · CONTRATTI DISPONIBILI</h2><label>porto</label><select id="portoContr"></select>
+          <div class="small" style="margin:4px 0">Firmare non vincola a nessun viaggio: il collegamento avviene con l'operazione di carico, dalla schermata Viaggi.</div>
+          <div id="listaContr"></div>
+        </section>
+        <section id="s-contratti" hidden><h2>CONTRATTI FIRMATI <span id="nfirm" class="small"></span></h2><div id="listaFirm" class="small">Nessun contratto firmato.</div></section>
+        <section id="s-viaggi" hidden>
+          <h2>VIAGGI PRENOTATI <span id="npren" class="small"></span></h2>
+          <div id="listaPren" class="small">Nessun viaggio prenotato.</div>
+          <div id="dettViaggio"></div>
+          <button id="apriPian" class="go">Pianifica viaggio</button>
+          <div id="pianifica" hidden>
+            <h2>PIANIFICAZIONE</h2>
+            <div class="small">Durante la pianificazione il tempo scorre a velocità reale. Prenotata la finestra, il carico dei contratti si fa dal viaggio.</div>
+            <div style="display:flex;gap:8px"><div style="flex:1"><label>partenza</label><select id="orig"></select></div><div style="flex:1"><label>arrivo</label><select id="dest"></select></div><div style="flex:1"><label>nave</label><select id="nave"></select></div></div>
+            <div class="small" id="naveInfo" style="margin-top:3px"></div>
+            <button id="cerca" style="width:100%;margin-top:6px">Cerca finestra</button>
+            <h2>FINESTRE DI LANCIO</h2>
+            <canvas id="pork" width="760" height="330"></canvas>
+            <div id="legenda" class="small" style="display:flex;align-items:center;gap:6px;margin-top:3px"><span id="lg0"></span><span style="flex:1;height:7px;background:linear-gradient(90deg,hsl(120,80%,52%),hsl(60,80%,45%),hsl(0,80%,30%))"></span><span id="lg1"></span></div>
+            <div id="hov" class="small" style="min-height:2.8em;margin-top:4px">Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.</div>
+            <div id="finestre" class="small" style="margin-top:6px">…</div>
+            <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
+            <button id="parti" class="go" disabled>Prenota il lancio</button>
+            <button id="annullaPian" style="width:100%;margin-top:6px">Annulla la pianificazione</button>
+            <div id="stato" class="small" style="margin-top:6px"></div>
+          </div>
+        </section>
+      </div>
+    </div>
     <div id="bar">
       <span id="tempoUI"><span id="velEt"></span><input type="range" id="velSl" min="0" max="1000" value="0"><span id="velPresets"></span></span>
       <button id="btnCal">Calendario finestre</button>
@@ -82,35 +127,9 @@
       <select id="modoVista" style="width:auto;display:inline-block" title="Quante orbite e nomi mostrare"></select>
     </div></div>
   <div id="panel">
-    <h1>SPACE TRUCKER · pianificatore</h1>
-    <div id="banca" class="contr"><div class="t">SALDO <b id="bSaldo"></b></div><div class="s" id="bDebito"></div><button id="bPrest">Prendi un prestito (+5.000)</button> <button id="bRimb">Rimborsa 5.000</button></div>
-    <h2>CONTRATTI DISPONIBILI</h2>
-    <label>porto</label><select id="portoContr"></select>
-    <div id="listaContr"></div>
-    <h2>CONTRATTI FIRMATI <span id="nfirm" class="small"></span></h2>
-    <div id="listaFirm" class="small">Nessun contratto firmato.</div>
-    <h2>VIAGGI PRENOTATI <span id="npren" class="small"></span></h2>
-    <div id="listaPren" class="small">Nessun viaggio prenotato.</div>
-    <button id="apriPian" class="go">Pianifica viaggio</button>
-    <div id="pianifica" hidden>
-      <h2>VIAGGIO</h2>
-      <div class="small">Durante la pianificazione il tempo scorre a velocità reale.</div>
-      <label>partenza</label><select id="orig"></select>
-      <label>arrivo</label><select id="dest"></select>
-      <label>nave</label><select id="nave"></select>
-      <div class="small" id="naveInfo" style="margin-top:3px"></div>
-      <button id="cerca" style="width:100%;margin-top:6px">Cerca finestra</button>
-      <h2>FINESTRE DI LANCIO</h2>
-      <canvas id="pork" width="342" height="256"></canvas>
-      <div id="legenda" class="small" style="display:flex;align-items:center;gap:6px;margin-top:3px"><span id="lg0"></span><span style="flex:1;height:7px;background:linear-gradient(90deg,hsl(120,80%,52%),hsl(60,80%,45%),hsl(0,80%,30%))"></span><span id="lg1"></span></div>
-      <div id="hov" class="small" style="min-height:2.8em;margin-top:4px">Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.</div>
-      <div id="finestre" class="small" style="margin-top:6px">…</div>
-      <h2>CARICO</h2><div id="caricoBox" class="small">Scegli una finestra per caricare i contratti firmati su questa rotta.</div>
-      <h2>VIAGGIO SCELTO</h2><div id="info" class="small">Cerca le finestre e scegline una.</div>
-      <button id="parti" class="go" disabled>Prenota il lancio</button>
-      <button id="annullaPian" style="width:100%;margin-top:6px">Annulla la pianificazione</button>
-      <div id="stato" class="small" style="margin-top:6px"></div>
-    </div>
+    <h1>SPACE TRUCKER</h1>
+    <div id="riass"></div>
+    <div id="navBtns"><button data-s="ufficio">Ufficio</button><button data-s="flotta">Flotta</button><button data-s="porto">Porto</button><button data-s="contratti">Contratti</button><button data-s="viaggi">Viaggi</button></div>
     <details id="regDet" style="margin-top:14px"><summary>Registro della sessione</summary>
       <div id="regSint" class="small" style="margin-top:6px"></div><pre id="regTxt"></pre>
       <button id="regCopia">Copia il registro</button> <button id="nuovaProva">Nuova prova</button>
@@ -414,9 +433,10 @@
     constructor(t0) {
       this.t = t0; this.vel = 1; this.forzato = false; this.tr = 0; this.pren = []; this.log = []; this.seq = 1; this.penali = 0;
       this.stat = { ricerche: 0, prenotazioni: 0, annullamenti: 0, reazioni: [], mancati: 0, ritardi: 0, velSec: {}, pianifSec: 0, inizioMs: 0 };
-      this.saldo = SALDO0; this.debito = SALDO0; this.prossimoInt = t0 + GIORNI_INT; this.offerte = {}; this.firmati = []; this.generaContratto = null; this.nascosta = false; this.rampaTr = -1e9; this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
+      this.saldo = SALDO0; this.movimenti = []; this.debito = SALDO0; this.prossimoInt = t0 + GIORNI_INT; this.offerte = {}; this.firmati = []; this.generaContratto = null; this.nascosta = false; this.rampaTr = -1e9; this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
     }
-    penale(x) { x = x || 0; this.penali += x; this.saldo -= x; }
+    muovi(imp, desc) { this.saldo += imp; this.movimenti.push({ t: this.t, desc, imp, saldo: this.saldo }); if (this.movimenti.length > 300) this.movimenti.shift(); }     // ogni variazione del saldo e' registrata (registro dei movimenti)
+    penale(x, desc) { x = x || 0; this.penali += x; if (x) this.muovi(-x, desc || 'Penale'); }
     velUtente() { return this.forzato ? 1 : Math.max(1, Math.min(VMAX, this.vel)); }
     registra(tipo, dati) { const e = Object.assign({ tr: +this.tr.toFixed(2), t: this.t, tipo }, dati || {}); this.log.push(e); if (this.log.length > 800) this.log.shift(); this.on('log', e); return e; }
     attivi() { return this.pren.filter(p => ['prenotata', 'in volo', 'in orbita'].includes(p.stato)); }
@@ -463,7 +483,7 @@
       this.esitoFinale(p, ap, e, pen, ritardoSec);
     }
     esitoFinale(p, ap, e, pen, ritardoSec) {
-      this.penale(pen); ap.pen = pen || 0;
+      this.penale(pen, (ap.tipo === 'partenza' ? 'Penale: ' : 'Penale: ') + (e === 'mancato' ? (ap.tipo === 'partenza' ? 'partenza mancata' : 'arrivo mancato') : 'ritardo alla conferma di presenza')); ap.pen = pen || 0;
       if (ap.tipo === 'partenza') { p.stato = (e === 'mancato') ? 'mancata' : 'in volo'; if (e === 'mancato') this.rilascia(p); else this.parte(p); }
       else { p.stato = (e === 'mancato') ? 'in orbita' : 'conclusa'; if (p.stato === 'conclusa') this.consegna(p); }
       this.rampaTr = this.tr;                                                        // dopo l'appuntamento il tempo torna alla velocita' scelta prima (vel non e' toccata)
@@ -481,14 +501,15 @@
       const id = this.nuovoId++;
       const mk = (tipo, tEv) => ({ tipo, tEv, stato: 'attesa', premuto: false, reazione: null, preTr: null, ritTr: null, vLock: 1, pen: 0 });
       const p = Object.assign({ id, nave: naveId, orig: piano.orig.id || piano.orig, dest: piano.dest.id || piano.dest, tDep: piano.tDep, tof: piano.tof, dv: piano.dv, r1: piano.r1, v1: piano.v1, creata: this.t, creataTr: this.tr, stato: 'prenotata', dep: mk('partenza', piano.tDep), arr: mk('arrivo', piano.tDep + piano.tof) }, info || {});
-      p.costoProp = cost; p.pagato = false; p.carichi = caric.map(cid => { const f = this.firmati.find(x => x.id === cid); f.stato = 'caricato'; f.pren = id; return { cid, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce }; });
+      p.capacita = info && info.caricoNave !== undefined ? info.caricoNave : Infinity; p.costoProp = cost; p.pagato = false; p.carichi = caric.map(cid => { const f = this.firmati.find(x => x.id === cid); f.stato = 'caricato'; f.pren = id; return { cid, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce }; });
       this.pren.push(p); this.stat.prenotazioni++; this.registra('prenota', { pren: id, nave: naveId, orig: p.orig, dest: p.dest, anticipo: +(p.tDep - this.t).toFixed(2), tof: Math.round(p.tof), scelta: (info && info.scelta) || '' });
       return { ok: true, pren: p };
     }
     annulla(id) {
       const p = this.pren.find(x => x.id === id); if (!p || p.stato !== 'prenotata' || p.dep.stato !== 'attesa') return { ok: false };
+      if ((p.carichi || []).length) return { ok: false, motivo: 'Con il carico a bordo il viaggio non si annulla.' };
       const f = Math.max(0, Math.min(1, (this.t - p.creata) / Math.max(1e-6, p.tDep - p.creata)));
-      const pen = f < 0.5 ? 0 : Math.round(f * PENALI.annullaMax / 10) * 10; this.penale(pen); p.stato = 'annullata'; this.rilascia(p); this.stat.annullamenti++;
+      const pen = f < 0.5 ? 0 : Math.round(f * PENALI.annullaMax / 10) * 10; this.penale(pen, 'Penale: prenotazione annullata'); p.stato = 'annullata'; this.rilascia(p); this.stat.annullamenti++;
       this.registra('annulla', { pren: id, frazione: +f.toFixed(2), penale: pen }); return { ok: true, penale: pen };
     }
     // ---------------------------------------------------------------- assenza (uscita, stallo del browser, standby): da qui in poi tempo reale 1:1
@@ -496,9 +517,9 @@
       const riepilogo = []; this.t += dtReal / DAY; this.tr += dtReal; this.vel = 1; this.forzato = false; this.aggiornaEconomia();
       const b = bucketVel(1); this.stat.velSec[b] = (this.stat.velSec[b] || 0) + dtReal;
       for (const p of this.pren) {
-        if (p.stato === 'prenotata' && p.dep.tEv <= this.t) { p.dep.stato = 'mancato'; this.stat.mancati++; this.penale(PENALI.partenzaMancata); p.dep.pen = PENALI.partenzaMancata; this.rilascia(p); p.stato = 'mancata'; riepilogo.push({ pren: p, app: 'partenza', esito: 'mancato', penale: PENALI.partenzaMancata });
+        if (p.stato === 'prenotata' && p.dep.tEv <= this.t) { p.dep.stato = 'mancato'; this.stat.mancati++; this.penale(PENALI.partenzaMancata, 'Penale: partenza mancata (assenza)'); p.dep.pen = PENALI.partenzaMancata; this.rilascia(p); p.stato = 'mancata'; riepilogo.push({ pren: p, app: 'partenza', esito: 'mancato', penale: PENALI.partenzaMancata });
           this.registra('esito', { pren: p.id, app: 'partenza', esito: 'mancato', assenza: true, penale: PENALI.partenzaMancata }); }
-        if (p.stato === 'in volo' && p.arr.tEv <= this.t) { p.arr.stato = 'mancato'; this.stat.mancati++; this.penale(PENALI.arrivoMancato); p.arr.pen = PENALI.arrivoMancato; p.stato = 'in orbita'; riepilogo.push({ pren: p, app: 'arrivo', esito: 'mancato', penale: PENALI.arrivoMancato });
+        if (p.stato === 'in volo' && p.arr.tEv <= this.t) { p.arr.stato = 'mancato'; this.stat.mancati++; this.penale(PENALI.arrivoMancato, 'Penale: arrivo mancato (assenza)'); p.arr.pen = PENALI.arrivoMancato; p.stato = 'in orbita'; riepilogo.push({ pren: p, app: 'arrivo', esito: 'mancato', penale: PENALI.arrivoMancato });
           this.registra('esito', { pren: p.id, app: 'arrivo', esito: 'mancato', assenza: true, penale: PENALI.arrivoMancato }); }
         for (const ap of [p.dep, p.arr]) if (ap && ap.stato === 'preavviso' && ap.tEv > this.t) ap.stato = 'attesa';     // preavviso interrotto dall'assenza: riparte da capo
       }
@@ -516,25 +537,38 @@
       this.firmati.push({ id: c.id, c, stato: 'firmato', pren: null, firmaT: this.t }); this.rinnova(sl);
       this.registra('firma', { cid: c.id, orig: c.orig, dest: c.dest, carico: c.carico, pay: c.pay, scad: Math.round(c.scad - this.t), saldo: Math.round(this.saldo) }); return { ok: true, c };
     }
-    annullaContratto(cid) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false }; const pen = Math.round(f.c.pay * PENALE_ANNULLO / 10) * 10; this.penale(pen); f.stato = 'annullato'; this.registra('contratto_annullato', { cid, penale: pen }); return { ok: true, penale: pen }; }
+    annullaContratto(cid) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false }; const pen = Math.round(f.c.pay * PENALE_ANNULLO / 10) * 10; this.penale(pen, 'Penale: contratto ' + cid + ' annullato'); f.stato = 'annullato'; this.registra('contratto_annullato', { cid, penale: pen }); return { ok: true, penale: pen }; }
+    // Operazione di carico: lega in modo definitivo uno o piu' contratti firmati (stessa rotta, entro la capacita') a un viaggio prenotato, prima della partenza.
+    caricoUsato(p) { return (p.carichi || []).reduce((a, k) => a + k.carico, 0); }
+    carica(prenId, cids) {
+      const p = this.pren.find(x => x.id === prenId); if (!p || p.stato !== 'prenotata') return { ok: false, motivo: 'Si può caricare solo un viaggio prenotato e non ancora partito.' };
+      let tonn = this.caricoUsato(p); const fs = [];
+      for (const cid of cids) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false, motivo: 'Un contratto non è più disponibile per il carico.' };
+        if (f.c.orig !== p.orig || f.c.dest !== p.dest) return { ok: false, motivo: 'Un contratto è su un\'altra rotta.' }; tonn += f.c.carico; fs.push(f); }
+      if (tonn > (p.capacita === undefined ? Infinity : p.capacita)) return { ok: false, motivo: 'Il carico (' + tonn + ' t) supera quello della nave (' + p.capacita + ' t).' };
+      p.carichi = p.carichi || [];
+      for (const f of fs) { f.stato = 'caricato'; f.pren = p.id; p.carichi.push({ cid: f.id, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce });
+        this.registra('carica', { pren: p.id, cid: f.id, ton: f.c.carico, tot: tonn, capacita: p.capacita === Infinity ? 0 : p.capacita, margine: Math.round(f.c.scad - (p.tDep + p.tof)) }); }
+      return { ok: true, tot: tonn };
+    }
     rilascia(p) { for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f && f.pren === p.id && f.stato !== 'consegnato') { f.stato = 'firmato'; f.pren = null; } } }
-    parte(p) { if (!p.pagato) { p.pagato = true; this.saldo -= p.costoProp || 0; } for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f) f.stato = 'in viaggio'; } }
+    parte(p) { if (!p.pagato) { p.pagato = true; if (p.costoProp) this.muovi(-p.costoProp, 'Propellente (' + p.nave + ': ' + p.orig + ' → ' + p.dest + ')'); } for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f) f.stato = 'in viaggio'; } }
     consegna(p) {
-      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (!f) continue; const r = compensoDi(k.pay, this.t, k.scad); this.saldo += r.importo; f.stato = 'consegnato'; f.incasso = r.importo;
+      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (!f) continue; const r = compensoDi(k.pay, this.t, k.scad); if (r.importo) this.muovi(r.importo, 'Compenso ' + k.cid + (r.ritardo ? ' (' + r.ritardo + ' g di ritardo)' : '')); f.stato = 'consegnato'; f.incasso = r.importo;
         this.registra('incasso', { pren: p.id, contratto: k.cid, compenso: r.importo, pieno: k.pay, ritardo: r.ritardo, saldo: Math.round(this.saldo) }); }
     }
     impegnato() { return this.pren.filter(p => p.stato === 'prenotata').reduce((a, p) => a + (p.costoProp || 0), 0); }      // propellente delle prenotazioni non ancora partite
     aggiornaEconomia() {
       for (const key in this.offerte) { const sl = this.offerte[key], c = this.offerta(sl); if (c && this.t > sl.tFrom + c.valida) this.rinnova(sl); }
-      for (const f of this.firmati) if (f.stato === 'firmato' && this.t > f.c.scad + GRAZIA) { const pen = Math.round(f.c.pay * PENALE_DECADUTO / 10) * 10; this.penale(pen); f.stato = 'scaduto'; this.registra('contratto_scaduto', { cid: f.id, penale: pen }); }
-      while (this.t >= this.prossimoInt) { const i = Math.round(this.debito * TASSO); this.prossimoInt += GIORNI_INT; if (i > 0) { this.saldo -= i; this.registra('interessi', { importo: i, debito: this.debito, saldo: Math.round(this.saldo) }); } }
+      for (const f of this.firmati) if (f.stato === 'firmato' && this.t > f.c.scad + GRAZIA) { const pen = Math.round(f.c.pay * PENALE_DECADUTO / 10) * 10; this.penale(pen, 'Penale: contratto ' + f.id + ' decaduto'); f.stato = 'scaduto'; this.registra('contratto_scaduto', { cid: f.id, penale: pen }); }
+      while (this.t >= this.prossimoInt) { const i = Math.round(this.debito * TASSO); this.prossimoInt += GIORNI_INT; if (i > 0) { this.muovi(-i, 'Interessi sul debito'); this.registra('interessi', { importo: i, debito: this.debito, saldo: Math.round(this.saldo) }); } }
     }
-    prestito() { if (this.debito + PREST > MAX_DEBITO) return false; this.debito += PREST; this.saldo += PREST; this.registra('prestito', { importo: PREST, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
-    rimborsa() { const x = Math.min(PREST, this.debito); if (x <= 0 || this.saldo < x) return false; this.debito -= x; this.saldo -= x; this.registra('rimborso', { importo: x, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
+    prestito() { if (this.debito + PREST > MAX_DEBITO) return false; this.debito += PREST; this.muovi(PREST, 'Prestito ricevuto'); this.registra('prestito', { importo: PREST, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
+    rimborsa() { const x = Math.min(PREST, this.debito); if (x <= 0 || this.saldo < x) return false; this.debito -= x; this.muovi(-x, 'Rimborso del debito'); this.registra('rimborso', { importo: x, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
     // ---------------------------------------------------------------- salvataggio
-    serializza(nowMs) { return JSON.parse(JSON.stringify({ v: 1, t: this.t, tr: this.tr, realMs: nowMs, vel: this.vel, pren: this.pren, log: this.log, seq: this.seq, nuovoId: this.nuovoId, penali: this.penali, stat: this.stat, saldo: this.saldo, debito: this.debito, prossimoInt: this.prossimoInt, offerte: this.offerte, firmati: this.firmati })); }
+    serializza(nowMs) { return JSON.parse(JSON.stringify({ v: 1, t: this.t, tr: this.tr, realMs: nowMs, vel: this.vel, pren: this.pren, log: this.log, seq: this.seq, nuovoId: this.nuovoId, penali: this.penali, stat: this.stat, saldo: this.saldo, movimenti: this.movimenti, debito: this.debito, prossimoInt: this.prossimoInt, offerte: this.offerte, firmati: this.firmati })); }
     ripristina(o, nowMs) {
-      this.t = o.t; this.tr = o.tr; this.pren = o.pren || []; this.log = o.log || []; this.seq = o.seq; this.nuovoId = o.nuovoId || 1; this.penali = o.penali || 0; this.stat = o.stat || this.stat; if (o.saldo !== undefined) { this.saldo = o.saldo; this.debito = o.debito; this.prossimoInt = o.prossimoInt; this.offerte = o.offerte || this.offerte; this.firmati = o.firmati || []; } this.vel = 1; this.forzato = false;
+      this.t = o.t; this.tr = o.tr; this.pren = o.pren || []; this.log = o.log || []; this.seq = o.seq; this.nuovoId = o.nuovoId || 1; this.penali = o.penali || 0; this.stat = o.stat || this.stat; if (o.saldo !== undefined && o.debito !== undefined && o.offerte) { this.saldo = o.saldo; this.movimenti = o.movimenti || []; this.debito = o.debito; this.prossimoInt = o.prossimoInt; this.offerte = o.offerte || this.offerte; this.firmati = o.firmati || []; } this.vel = 1; this.forzato = false;
       const trascorso = Math.max(0, (nowMs - o.realMs) / 1000);              // REGOLA: da "ultimo visto" in poi si va a 1:1, qualunque fosse la velocita'
       return trascorso > 0 ? this.assenza(trascorso) : [];
     }
@@ -571,11 +605,11 @@ function corpiInFocus() {                                                       
   return f;
 }
 let viaggioSel = null;                                                                 // id del viaggio prenotato selezionato (dall'elenco o cliccando la nave)
-function selezionaViaggio(id) { viaggioSel = (id === null || viaggioSel === id) ? null : id; mondo.registra('viaggio_sel', { pren: viaggioSel || 0 }); $('listaPren') && aggiornaLista(true); }
+function selezionaViaggio(id) { viaggioSel = (id === null || viaggioSel === id) ? null : id; caricaSel = new Set(); mondo.registra('viaggio_sel', { pren: viaggioSel || 0 }); if ($('listaPren')) { aggiornaLista(true); if (typeof aggiornaDettaglio === 'function') aggiornaDettaglio(true); } }
 
 const mondo = new Tempo.Mondo(O.giorni(2412, 1, 1)), CT = Contratti;
 CT.EPOCA = O.giorni(2412, 1, 1); mondo.generaContratto = CT.genera; mondo.iniziaContratti(CT.PORTI, CT.SLOT_PER_PORTO);
-let caricoSel = new Set(), caricoChiave = '';                                          // contratti firmati spuntati per il carico del viaggio in pianificazione
+let caricaSel = new Set();                                                              // contratti firmati spuntati per l'operazione di carico del viaggio selezionato
 const cr = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' cr';
 const costoProp = (dv, N) => O.propellente(dv, N).t * CT.PREZZO_PROP[N.motore];          // dipende da massa della nave e motore, non dal carico
 let t = mondo.t, W = 1, H = 1, dpr = 1;
@@ -753,7 +787,7 @@ function elencoFinestre() {
   box.innerHTML = '<div class="wh"><span>partenza</span><span>durata</span><span>propellente</span></div>';
   const migl = Math.min(...gr.finestre.map(q => q.dv));
   gr.finestre.forEach(p => { const b = document.createElement('button'); b.className = 'win';
-    b.innerHTML = `<span>${traTxt(p.tDep - gr.t0)}<br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep)}</span></span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
+    b.innerHTML = `<span>${fraG(p.tDep - gr.t0)}<br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep)}</span></span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
     b.onclick = () => { sel = p; disegnaPork(); mostraPiano(); inquadraTraiettoria(); }; box.appendChild(b); });
 }
 const hovIniziale = 'Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.';
@@ -771,32 +805,22 @@ pk.addEventListener('click', e => {
 });
 const f1 = (x, n = 1) => x.toFixed(n).replace('.', ',');
 const gg = d => O.data(d).toISOString().slice(0, 10);
-// Contratti firmati su questa rotta: si spuntano quelli da caricare (entro la capacita' della nave). Ritorna i caricati con il compenso atteso a questa data di arrivo.
-function contrattiRotta() { return sel ? mondo.firmati.filter(f => f.stato === 'firmato' && f.c.orig === (sel.orig.id || sel.orig) && f.c.dest === (sel.dest.id || sel.dest)) : []; }
-function aggiornaCarico(N) {
-  const lista = contrattiRotta(), chiave = (sel ? (sel.orig.id || sel.orig) + (sel.dest.id || sel.dest) : '') + N.id + lista.map(f => f.id).join(',');
-  if (chiave !== caricoChiave) { caricoChiave = chiave; caricoSel = new Set(); let tt = 0; for (const f of lista.slice().sort((a, b) => a.c.scad - b.c.scad)) if (tt + f.c.carico <= N.carico) { caricoSel.add(f.id); tt += f.c.carico; } }
-  const arrivo = sel.tDep + sel.tof; let tonn = 0; const out = [];
-  for (const f of lista) if (caricoSel.has(f.id)) { tonn += f.c.carico; out.push({ f, comp: CT.compenso(f.c.pay, arrivo, f.c.scad) }); }
-  $('caricoBox').innerHTML = lista.length ? `<div>Carico ${tonn} t su ${N.carico} t (${N.nome})</div>` + lista.map(f => { const c = f.c, cp = CT.compenso(c.pay, arrivo, c.scad), spunta = caricoSel.has(f.id), cap = !spunta && tonn + c.carico > N.carico;
-      return `<label class="chk"><input type="checkbox" data-c="${f.id}" ${spunta ? 'checked' : ''} ${cap ? 'disabled' : ''}><span>${c.carico} t di ${c.merce.toLowerCase()} · consegna entro ${gg(c.scad)}<br>arrivo previsto ${gg(arrivo)}: ${cp.ritardo ? '<span class="warn">' + cp.ritardo + ' giorni di ritardo, −' + Math.round((1 - cp.f) * 100) + '% → ' + cr(cp.importo) + '</span>' : '<span class="ok">in tempo → ' + cr(cp.importo) + '</span>'}${cap ? ' · non c\'è più posto' : ''}</span></label>`; }).join('')
-    : '<div>Nessun contratto firmato per questa rotta: il viaggio partirebbe a vuoto.</div>';
-  $('caricoBox').querySelectorAll('input[data-c]').forEach(i => { i.onchange = () => { if (i.checked) caricoSel.add(i.dataset.c); else caricoSel.delete(i.dataset.c); mostraPiano(); }; });
-  return out;
-}
+// Il tempo si legge in GIORNI: "fra 513 g" e' il valore principale, la data resta piccola accanto. Il margine confronta scadenza e arrivo in giorni.
+const fraG = d => d < -1 ? Math.round(-d) + ' g fa' : d < 1 / 24 ? 'ora' : d < 1 ? 'fra ' + Math.max(1, Math.round(d * 24)) + ' h' : 'fra ' + Math.round(d) + ' g' + (d >= 400 ? ' (' + f1(d / 365.25, 1) + ' anni)' : '');
+const dtp = d => '<span class="dt">' + gg(d) + '</span>';
+const margine = (scad, arrivo) => { const rit = Math.ceil(arrivo - scad - 1e-9); if (rit > 0) return { rit, cls: 'warn', txt: '−' + rit + ' g di ritardo (−' + Math.min(100, Math.round(rit * CT.RITARDO_AL_GIORNO * 100)) + '% del compenso)' }; return { rit: 0, cls: 'ok', txt: '+' + Math.floor(scad - arrivo) + ' g di margine' }; };
 function mostraPiano() {
-  if (!sel) { $('caricoBox').textContent = 'Scegli una finestra per caricare i contratti firmati su questa rotta.'; $('info').textContent = gr && gr.finestre && !gr.finestre.length ? 'Nessuna finestra utile in questo periodo.' : 'Nessuna soluzione trovata.'; $('parti').disabled = true; return; }
+  if (!sel) { $('info').textContent = gr && gr.finestre && !gr.finestre.length ? 'Nessuna finestra utile in questo periodo.' : 'Nessuna soluzione trovata.'; $('parti').disabled = true; return; }
   const N = naveSel(), pr = O.propellente(sel.dv, N), fuori = pr.frac > 1;
-  const costo = costoProp(sel.dv, N), carichi = aggiornaCarico(N), compTot = carichi.reduce((a, k) => a + k.comp.importo, 0), margine = compTot - costo, nosaldo = mondo.saldo - mondo.impegnato() < costo;
+  const costo = costoProp(sel.dv, N), nosaldo = mondo.saldo - mondo.impegnato() < costo;
   const durata = sel.tof >= 700 ? f1(sel.tof / 365.25, 1) + ' anni' : f1(sel.tof, 0) + ' giorni', sub = sel.tof >= 700 ? f1(sel.tof, 0) + ' giorni' : '≈ ' + f1(sel.tof / 30.44, 1) + ' mesi';
   const avv = sel.rp < 0.35 * AU ? `<div class="warn" style="margin-bottom:6px">Attenzione: passa a ${f1(sel.rp / AU, 2)} UA dal Sole (zona molto calda).</div>` : '';
   $('info').innerHTML = avv + `<div class="grande"><div><span class="et">DURATA</span><b>${durata}</b><span class="sub">${sub}</span></div>
     <div class="${fuori ? 'fuori' : ''}"><span class="et">PROPELLENTE</span><b>${fuori ? '> 100%' : Math.round(pr.frac * 100) + '%'}</b><span class="sub">${f1(pr.t, 1)} t su ${N.serbatoio} t${fuori ? ' · non basta' : ''}</span></div></div>
-  <div class="row"><span>partenza</span><span class="ok">${traTxt(sel.tDep - (gr ? gr.t0 : t))} · ${gg(sel.tDep)}</span></div>
-  <div class="row"><span>arrivo</span><span>${gg(sel.tDep + sel.tof)}</span></div>
+  <div class="row"><span>partenza</span><span class="ok">${fraG(sel.tDep - t)} ${dtp(sel.tDep)}</span></div>
+  <div class="row"><span>arrivo</span><span>${fraG(sel.tDep + sel.tof - t)} ${dtp(sel.tDep + sel.tof)}</span></div>
   <div class="row"><span>costo propellente</span><span>${cr(costo)}${nosaldo ? ' · <b style="color:#ff6a6a">saldo insufficiente</b>' : ''}</span></div>
-  <div class="row"><span>compensi attesi</span><span class="${compTot > 0 ? 'ok' : ''}">${cr(compTot)}</span></div>
-  <div class="row"><span>margine del viaggio</span><span class="${margine >= 0 ? 'ok' : 'warn'}"><b>${margine >= 0 ? '+' : ''}${cr(margine)}</b>${carichi.length ? '' : ' (viaggio a vuoto)'}</span></div>
+  <div class="small" style="margin-top:4px">I contratti si caricano dopo la prenotazione, dalla scheda del viaggio.</div>
   <details><summary>dettagli tecnici</summary>
     <div class="row"><span>variazione di velocità totale</span><span>${f1(sel.dv, 2)} km/s</span></div>
     <div class="row"><span>velocità relativa ai pianeti (partenza + arrivo)</span><span>${f1(sel.vinf1, 1)} + ${f1(sel.vinf2, 1)} km/s</span></div>
@@ -1089,67 +1113,140 @@ function impostaVel(v) { if (mondo.forzato || mondo.inPreavviso()) return; const
 $('velSl').addEventListener('input', () => { let p = +$('velSl').value / 1000; for (const pr of Tempo.PRESET) if (Math.abs(p - Tempo.sliderDaVel(pr.v)) < 0.02) p = Tempo.sliderDaVel(pr.v); impostaVel(Tempo.velDaSlider(p)); });
 // ---- pianificazione: apertura e chiusura
 function apriPian(o) {
-  $('pianifica').hidden = false; $('apriPian').hidden = true; mondo.forzato = true; mondo.registra('pianifica_apri', o && o.cid ? { cid: o.cid } : {}); caricoChiave = '';
+  apriSchermo('viaggi'); $('pianifica').hidden = false; $('apriPian').hidden = true; mondo.forzato = true; mondo.registra('pianifica_apri', o && o.cid ? { cid: o.cid } : {});
   if (o) { $('orig').value = o.orig; $('dest').value = o.dest; }
   aggiornaNavi(); infoNave(); try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
   if (o) $('cerca').click();
 }
-function chiudiPian(annullata) { $('pianifica').hidden = true; $('apriPian').hidden = false; mondo.forzato = false; gr = null; sel = null; calcolo = null; caricoChiave = ''; caricoSel = new Set(); $('caricoBox').textContent = 'Scegli una finestra per caricare i contratti firmati su questa rotta.'; $('info').textContent = 'Cerca le finestre e scegline una.'; $('finestre').textContent = '…'; $('stato').textContent = ''; if (annullata) mondo.registra('pianifica_annulla'); }
+function chiudiPian(annullata) { $('pianifica').hidden = true; $('apriPian').hidden = false; mondo.forzato = false; gr = null; sel = null; calcolo = null; $('info').textContent = 'Cerca le finestre e scegline una.'; $('finestre').textContent = '…'; $('stato').textContent = ''; if (annullata) mondo.registra('pianifica_annulla'); }
 $('apriPian').onclick = () => apriPian(); $('annullaPian').onclick = () => chiudiPian(true);
 $('parti').onclick = () => {
   if (!sel || !gr) return; const N = naveSel(); const mn = Math.min(...(gr.finestre || []).map(f => f.dv)), prima = (gr.finestre || [])[0];
   const scelta = (gr.finestre || []).some(f => f.tDep === sel.tDep) ? (Math.abs(sel.dv - mn) < 1e-6 ? 'economica' : (prima && prima.tDep === sel.tDep ? 'prima' : 'altra')) : 'libera';
-  const costo = costoProp(sel.dv, N), carichi = aggiornaCarico(N), atteso = carichi.reduce((a, k) => a + k.comp.importo, 0), ton = carichi.reduce((a, k) => a + k.f.c.carico, 0);
-  const r = mondo.prenota(sel, N.id, { scelta, caricati: carichi.map(k => k.f.id), costoProp: costo, caricoNave: N.carico }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
-  viaggioSel = r.pren.id; mondo.registra('carico', { pren: r.pren.id, nave: N.id, n: carichi.length, ton, atteso, costo: Math.round(costo), saldo: Math.round(mondo.saldo) });
-  toast((carichi.length ? 'Lancio prenotato con ' + ton + ' t di carico: ' : 'Lancio a vuoto prenotato: ') + N.nome + ', ' + nomeCorpo(r.pren.orig) + ' → ' + nomeCorpo(r.pren.dest) + '. I preparativi sono iniziati.', 6000); chiudiPian(false); aggiornaLista(true);
+  const costo = costoProp(sel.dv, N);
+  const r = mondo.prenota(sel, N.id, { scelta, costoProp: costo, caricoNave: N.carico }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
+  viaggioSel = r.pren.id; caricaSel = new Set(); apriSchermo('viaggi');
+  toast('Lancio prenotato: ' + N.nome + ', ' + nomeCorpo(r.pren.orig) + ' → ' + nomeCorpo(r.pren.dest) + '. Carica i contratti dalla scheda del viaggio prima della partenza.', 6000); chiudiPian(false); aggiornaLista(true);
 };
-// ---- contratti: offerte, firmati, banca
+// ---- schermate (sopra la mappa): Ufficio, Flotta, Porto, Contratti, Viaggi
+let schermoAperto = null, sigSch = '';
+function apriSchermo(nome) { schermoAperto = nome; $('schermo').hidden = false; for (const sct of $('sBody').children) sct.hidden = sct.id !== 's-' + nome; document.querySelectorAll('#stab button[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === nome)); sigSch = ''; aggiornaSchermo(true); }
+function chiudiSchermo() { if (!$('pianifica').hidden) chiudiPian(true); schermoAperto = null; $('schermo').hidden = true; }
+document.querySelectorAll('#stab button[data-s],#navBtns button[data-s]').forEach(b => { b.onclick = () => { if (!$('pianifica').hidden && b.dataset.s !== 'viaggi') chiudiPian(true); apriSchermo(b.dataset.s); }; });
+$('sChiudi').onclick = chiudiSchermo;
+function aggiornaSchermo(forza) { if (!schermoAperto) return; if (schermoAperto === 'ufficio') aggiornaUfficio(forza); else if (schermoAperto === 'flotta') aggiornaFlotta(forza); else if (schermoAperto === 'viaggi') aggiornaDettaglio(forza); else if (schermoAperto === 'porto') aggiornaContr(forza); else if (schermoAperto === 'contratti') aggiornaFirm(forza); }
+
+// ---- porto: offerte
 let sigContr = '', sigFirm = '', portoContr = 'terra';
 $('portoContr').onchange = e => { portoContr = e.target.value; aggiornaContr(true); e.target.blur(); };
 const naviAdatte = c => Object.values(O.FLOTTA).filter(n => n.carico >= c.carico && O.propellente(c.dv, n).frac <= 1).map(n => n.nome).join(', ') || 'nessuna per ora';
 function aggiornaContr(forza) {
+  if (schermoAperto !== 'porto' && !forza) return;
   const sel0 = $('portoContr'), lista = mondo.disponibili(portoContr), pieno = mondo.aperti().length >= CT.MAX_FIRMATI;
-  const sig = [portoContr, pieno, ...lista.map(x => x.c.id), ...CT.PORTI.map(po => mondo.disponibili(po).length)].join('|');
+  const sig = [portoContr, pieno, Math.floor(mondo.t), ...lista.map(x => x.c.id)].join('|');
   if (sig === sigContr && !forza) return; sigContr = sig;
-  sel0.innerHTML = ''; CT.PORTI.forEach(po => sel0.add(new Option(nomeCorpo(po) + (O.PORTI[po] ? ' (' + O.PORTI[po] + ')' : ''), po))); sel0.value = portoContr;
-  $('listaContr').innerHTML = lista.map(({ slot, c }) => { const resta = Math.max(0, Math.round(c.tFrom + c.valida - mondo.t));
-    return `<div class="contr"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()}</div>
-      <div class="s">consegna entro il <b>${gg(c.scad)}</b> · compenso ${cr(c.pay)}<br>offerta valida ancora ${resta >= 700 ? f1(resta / 365.25, 1) + ' anni' : resta + ' giorni'} · navi adatte: ${naviAdatte(c)}</div>
+  sel0.innerHTML = ''; CT.PORTI.forEach(po => sel0.add(new Option(nomeCorpo(po) + (O.PORTI[po] ? ' (' + O.PORTI[po] + ')' : '') + ' · ' + mondo.disponibili(po).length + ' contratti', po))); sel0.value = portoContr;
+  $('listaContr').innerHTML = lista.map(({ slot, c }) => { const resta = Math.max(0, c.tFrom + c.valida - mondo.t), arrRif = c.tw + c.tof, m = margine(c.scad, arrRif);
+    return `<div class="contr"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()} · compenso <b>${cr(c.pay)}</b></div>
+      <div class="s">consegna entro <b>${fraG(c.scad - mondo.t)}</b> ${dtp(c.scad)}<br>offerta valida ${fraG(resta)}<br>finestra utile: parte ${fraG(c.tw - mondo.t)}, dura ≈ ${c.tof} g → consegna ${fraG(arrRif - mondo.t)}: <span class="${m.cls}">${m.txt}</span><br>navi adatte: ${naviAdatte(c)}</div>
       <button data-s="${slot}" ${pieno ? 'disabled' : ''}>${pieno ? 'Hai già ' + CT.MAX_FIRMATI + ' contratti aperti' : 'Firma il contratto'}</button></div>`; }).join('');
-  $('listaContr').querySelectorAll('button[data-s]').forEach(b => { b.onclick = () => { const r = mondo.firma(b.dataset.s); toast(r.ok ? 'Contratto firmato: ' + nomeCorpo(r.c.orig) + ' → ' + nomeCorpo(r.c.dest) + ', consegna entro ' + gg(r.c.scad) + '. Ora pianifica un viaggio per consegnarlo.' : r.motivo, 5000); aggiornaContr(true); aggiornaFirm(true); }; });
+  $('listaContr').querySelectorAll('button[data-s]').forEach(b => { b.onclick = () => { const r = mondo.firma(b.dataset.s); toast(r.ok ? 'Contratto firmato: ' + nomeCorpo(r.c.orig) + ' → ' + nomeCorpo(r.c.dest) + ', consegna ' + fraG(r.c.scad - mondo.t) + '. Caricalo su un viaggio dalla schermata Viaggi.' : r.motivo, 5000); aggiornaContr(true); aggiornaFirm(true); }; });
 }
-const STATI_F = { firmato: 'da caricare', caricato: 'caricato su un viaggio prenotato', 'in viaggio': 'in viaggio', consegnato: 'consegnato', scaduto: 'decaduto (penale pagata)', annullato: 'annullato' };
+// ---- contratti firmati
+const STATI_F = { firmato: 'da caricare', caricato: 'caricato, il viaggio non è ancora partito', 'in viaggio': 'in viaggio', consegnato: 'consegnato', scaduto: 'decaduto (penale pagata)', annullato: 'annullato' };
+const liberoSu = (p, c) => p.stato === 'prenotata' && p.orig === c.orig && p.dest === c.dest && (p.capacita - mondo.caricoUsato(p)) >= c.carico;
 function aggiornaFirm(forza) {
-  const aperti = mondo.aperti(), chiusi = mondo.firmati.filter(f => !aperti.includes(f)).slice(-3).reverse(), t0 = Math.floor(mondo.t);
-  const sig = mondo.firmati.map(f => f.id + f.stato).join('|') + '|' + t0 + '|' + (caricoSel.size);
-  $('nfirm').textContent = '(' + aperti.length + '/' + CT.MAX_FIRMATI + ')'; if (sig === sigFirm && !forza) return; sigFirm = sig;
-  const card = (f, chiuso) => { const c = f.c, rit = Math.ceil(mondo.t - c.scad), nota = f.stato === 'firmato' || f.stato === 'caricato' ? (rit > 0 ? ` · <span class="warn">scaduto da ${rit} giorni: −2% al giorno</span>` : ` · mancano ${Math.max(0, Math.round(c.scad - mondo.t))} giorni`) : '';
-    return `<div class="contr ${chiuso ? 'fine' : ''}"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()}</div>
-      <div class="s">consegna entro ${gg(c.scad)} · compenso ${cr(c.pay)}<br>${STATI_F[f.stato]}${f.stato === 'consegnato' ? ': ' + cr(f.incasso) : ''}${nota}</div>
-      ${f.stato === 'firmato' ? `<button data-p="${f.id}">Pianifica la consegna</button> <button data-a="${f.id}" style="background:#16202b;border-color:#27455f">Annulla (penale ${cr(c.pay * CT.PENALE_ANNULLO)})</button>` : ''}</div>`; };
-  $('listaFirm').innerHTML = aperti.length || chiusi.length ? aperti.map(f => card(f, false)).join('') + chiusi.map(f => card(f, true)).join('') : 'Nessun contratto firmato.';
-  $('listaFirm').querySelectorAll('button[data-p]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.p); if (!$('pianifica').hidden) chiudiPian(true); apriPian({ orig: f.c.orig, dest: f.c.dest, cid: f.id }); }; });
+  const aperti = mondo.aperti(), chiusi = mondo.firmati.filter(f => !aperti.includes(f)).slice(-3).reverse();
+  $('nfirm').textContent = '(' + aperti.length + '/' + CT.MAX_FIRMATI + ')'; if (schermoAperto !== 'contratti' && !forza) return;
+  const sig = mondo.firmati.map(f => f.id + f.stato + (f.pren || '')).join('|') + '|' + Math.floor(mondo.t) + '|' + mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('');
+  if (sig === sigFirm && !forza) return; sigFirm = sig;
+  const card = (f, chiuso) => { const c = f.c, rit = Math.ceil(mondo.t - c.scad), pv = f.pren && mondo.pren.find(p => p.id === f.pren);
+    const nota = f.stato === 'firmato' || f.stato === 'caricato' ? (rit > 0 ? ` · <span class="warn">scaduto da ${rit} g: −2% al giorno</span>` : '') : '';
+    let az = '';
+    if (f.stato === 'firmato') { const opz = mondo.pren.filter(p => liberoSu(p, c));
+      az = (opz.length ? opz.map(p => { const arr = p.tDep + p.tof, m = margine(c.scad, arr); return `<button data-c="${f.id}" data-v="${p.id}">Carica su ${O.FLOTTA[p.nave].nome} (parte ${fraG(p.tDep - mondo.t)}, arriva ${fraG(arr - mondo.t)}: ${m.txt})</button>`; }).join('<br>')
+        : `<div class="small">Nessun viaggio prenotato su questa rotta con spazio per ${c.carico} t.</div><button data-p="${f.id}">Pianifica un viaggio per questa rotta</button>`)
+        + `<br><button data-a="${f.id}" style="background:#16202b;border-color:#27455f">Annulla il contratto (penale ${cr(c.pay * CT.PENALE_ANNULLO)})</button>`; }
+    return `<div class="contr ${chiuso ? 'fine' : ''}"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()} · compenso ${cr(c.pay)}</div>
+      <div class="s">consegna entro <b>${fraG(c.scad - mondo.t)}</b> ${dtp(c.scad)}<br>${STATI_F[f.stato]}${f.stato === 'consegnato' ? ': ' + cr(f.incasso) : ''}${pv ? ' · su ' + O.FLOTTA[pv.nave].nome : ''}${nota}</div>${az}</div>`; };
+  $('listaFirm').innerHTML = aperti.length || chiusi.length ? aperti.map(f => card(f, false)).join('') + chiusi.map(f => card(f, true)).join('') : 'Nessun contratto firmato. Firmane uno dalla schermata Porto.';
+  $('listaFirm').querySelectorAll('button[data-v]').forEach(b => { b.onclick = () => { if (confirm('Il carico è definitivo: il contratto resterà legato a questo viaggio. Procedo?')) { const r = mondo.carica(+b.dataset.v, [b.dataset.c]); toast(r.ok ? 'Caricato.' : r.motivo, 4000); aggiornaFirm(true); aggiornaDettaglio(true); } }; });
+  $('listaFirm').querySelectorAll('button[data-p]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.p); apriPian({ orig: f.c.orig, dest: f.c.dest, cid: f.id }); }; });
   $('listaFirm').querySelectorAll('button[data-a]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.a); if (confirm('Annullare il contratto? Si paga una penale di ' + cr(f.c.pay * CT.PENALE_ANNULLO) + '.')) { mondo.annullaContratto(f.id); aggiornaContr(true); aggiornaFirm(true); } }; });
 }
+// ---- viaggio selezionato: carico e contratti
+function aggiornaDettaglio(forza) {
+  const box = $('dettViaggio'), p = mondo.pren.find(x => x.id === viaggioSel && mondo.attivi().includes(x));
+  const sig = p ? p.id + p.stato + mondo.caricoUsato(p) + '|' + [...caricaSel].join(',') + '|' + mondo.firmati.map(f => f.id + f.stato).join(',') + '|' + Math.floor(mondo.t) : 'x';
+  if (sig === sigDett && !forza) return; sigDett = sig;
+  if (!p) { box.innerHTML = '<div class="small" style="margin:8px 0">Seleziona un viaggio dall\'elenco per vedere il carico e collegarlo ai contratti.</div>'; return; }
+  const N = O.FLOTTA[p.nave], usato = mondo.caricoUsato(p), cap = p.capacita === Infinity ? N.carico : p.capacita, arr = p.tDep + p.tof;
+  const stato = { prenotata: 'prenotato, parte ' + fraG(p.tDep - mondo.t), 'in volo': 'in volo, arriva ' + fraG(arr - mondo.t), 'in orbita': 'in orbita, attende l\'attracco' }[p.stato] || p.stato;
+  let h = `<div class="contr"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${stato} ${dtp(p.tDep)} → ${dtp(arr)} · durata ${Math.round(p.tof)} g · propellente ${cr(p.costoProp || 0)}${p.pagato ? ' (pagato)' : ''}</div>
+    <div class="s" style="margin-top:6px">CARICO A BORDO: <b>${usato} t su ${cap} t</b></div><div class="bar"><div style="width:${Math.min(100, usato / cap * 100)}%"></div></div>`;
+  h += (p.carichi || []).length ? p.carichi.map(k => { const m = margine(k.scad, arr), cp = CT.compenso(k.pay, arr, k.scad); return `<div class="s">• ${k.carico} t di ${k.merce.toLowerCase()} (${k.cid}) · scadenza ${fraG(k.scad - mondo.t)} ${dtp(k.scad)} · <span class="${m.cls}">${m.txt}</span> → compenso previsto ${cr(cp.importo)}</div>`; }).join('') : '<div class="s">Nessun contratto caricato: il viaggio partirebbe a vuoto.</div>';
+  if (p.stato === 'prenotata') {
+    const el = mondo.firmati.filter(f => f.stato === 'firmato' && f.c.orig === p.orig && f.c.dest === p.dest);
+    h += '<div class="t" style="margin-top:8px">Carica contratti firmati su questa rotta</div>';
+    if (!el.length) h += '<div class="s">Nessun contratto firmato su questa rotta. Firmane uno dalla schermata Porto (origine ' + nomeCorpo(p.orig) + ').</div>';
+    else { let tt = usato; for (const f of el) if (caricaSel.has(f.id)) tt += f.c.carico;
+      h += el.map(f => { const c = f.c, sp = caricaSel.has(f.id), non = !sp && tt + c.carico > cap, m = margine(c.scad, arr), cp = CT.compenso(c.pay, arr, c.scad);
+        return `<label class="chk"><input type="checkbox" data-c="${f.id}" ${sp ? 'checked' : ''} ${non ? 'disabled' : ''}><span>${c.carico} t di ${c.merce.toLowerCase()} · scadenza ${fraG(c.scad - mondo.t)} ${dtp(c.scad)} · arrivo ${fraG(arr - mondo.t)}: <span class="${m.cls}">${m.txt}</span> → ${cr(cp.importo)}${non ? ' · non c\'è posto' : ''}</span></label>`; }).join('')
+        + `<div class="s">Selezionati: ${[...caricaSel].length} · carico totale ${tt} t su ${cap} t</div><button id="btnCarica" class="go" ${caricaSel.size ? '' : 'disabled'}>Carica i selezionati (definitivo)</button>`; }
+  }
+  box.innerHTML = h + '</div>';
+  box.querySelectorAll('input[data-c]').forEach(i => { i.onchange = () => { if (i.checked) caricaSel.add(i.dataset.c); else caricaSel.delete(i.dataset.c); aggiornaDettaglio(true); }; });
+  const bc = $('btnCarica'); if (bc) bc.onclick = () => { if (confirm('Il carico è definitivo: i contratti restano legati a questo viaggio e non si può più annullarlo. Procedo?')) { const r = mondo.carica(p.id, [...caricaSel]); caricaSel = new Set(); toast(r.ok ? 'Carico completato: ' + r.tot + ' t a bordo.' : r.motivo, 5000); aggiornaDettaglio(true); aggiornaLista(true); } };
+}
+let sigDett = '';
+// ---- flotta
+function aggiornaFlotta(forza) {
+  const sig = mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('|') + Math.floor(mondo.t); if (sig === sigFl && !forza) return; sigFl = sig;
+  $('flottaBox').innerHTML = '<table class="mov"><tr><th>nave</th><th>classe</th><th>motore</th><th class="n">carico</th><th class="n">serbatoio</th><th>stato</th></tr>' + Object.values(O.FLOTTA).map(n => {
+    const p = mondo.attivi().find(x => x.nave === n.id), st = p ? `${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)} · ${p.stato === 'prenotata' ? 'parte ' + fraG(p.tDep - mondo.t) : p.stato === 'in volo' ? 'arriva ' + fraG(p.tDep + p.tof - mondo.t) : 'in orbita'} · a bordo ${mondo.caricoUsato(p)}/${p.capacita === Infinity ? n.carico : p.capacita} t` : '<span class="ok">libera</span>';
+    return `<tr><td><b>${n.nome}</b></td><td>${n.classe}</td><td>${O.MOTORI[n.motore].nome.toLowerCase()}</td><td class="n">${n.carico} t</td><td class="n">${n.serbatoio} t</td><td>${st}</td></tr>`; }).join('') + '</table><div class="small" style="margin-top:8px">Valori provvisori. La posizione delle navi non è ancora simulata: si assume che la nave sia nel porto di partenza.</div>';
+}
+let sigFl = '';
+// ---- ufficio: conti e movimenti
+function aggiornaUfficio(forza) {
+  aggiornaBanca();
+  const sig = mondo.movimenti.length + '|' + Math.round(mondo.saldo) + '|' + Math.floor(mondo.t); if (sig === sigUff && !forza) return; sigUff = sig;
+  const m = mondo.movimenti.slice().reverse().slice(0, 80);
+  $('movim').innerHTML = m.length ? '<table class="mov"><tr><th>quando</th><th>voce</th><th class="n">importo</th><th class="n">saldo</th></tr>' + m.map(x => `<tr><td>${fraG(x.t - mondo.t)} ${dtp(x.t)}</td><td>${x.desc}</td><td class="n ${x.imp >= 0 ? 'pos' : 'neg'}">${x.imp >= 0 ? '+' : ''}${cr(x.imp)}</td><td class="n">${cr(x.saldo)}</td></tr>`).join('') + '</table>' : 'Nessun movimento ancora.';
+}
+let sigUff = '';
 function aggiornaBanca() {
   const prossimo = mondo.prossimoInt - mondo.t, interesse = Math.round(mondo.debito * Tempo.TASSO);
   $('bSaldo').textContent = cr(mondo.saldo); $('bSaldo').style.color = mondo.saldo < 0 ? '#ff6a6a' : '#fff';
-  $('bDebito').textContent = 'Debito ' + cr(mondo.debito) + ' · interesse ' + cr(interesse) + ' ogni ' + Tempo.GIORNI_INT + ' giorni · prossimo fra ' + Math.max(0, Math.ceil(prossimo)) + ' giorni (' + gg(mondo.prossimoInt) + ')';
+  $('bDebito').innerHTML = 'Debito <b>' + cr(mondo.debito) + '</b> (iniziale: prestito di ' + cr(Tempo.SALDO0) + ') · interesse ' + cr(interesse) + ' ogni ' + Tempo.GIORNI_INT + ' giorni · prossimo ' + fraG(prossimo) + ' ' + dtp(mondo.prossimoInt);
   $('bPrest').disabled = mondo.debito + Tempo.PREST > Tempo.MAX_DEBITO; $('bRimb').disabled = mondo.debito <= 0 || mondo.saldo < Math.min(Tempo.PREST, mondo.debito);
 }
-$('bPrest').onclick = () => { if (mondo.prestito()) toast('Prestito concesso: +' + cr(Tempo.PREST) + '. Pagherai interessi ogni ' + Tempo.GIORNI_INT + ' giorni.', 5000); };
-$('bRimb').onclick = () => { if (mondo.rimborsa()) toast('Rimborsati ' + cr(Tempo.PREST) + ' di debito.', 3500); };
+$('bPrest').onclick = () => { if (mondo.prestito()) toast('Prestito concesso: +' + cr(Tempo.PREST) + '. Pagherai interessi ogni ' + Tempo.GIORNI_INT + ' giorni.', 5000); aggiornaUfficio(true); };
+$('bRimb').onclick = () => { if (mondo.rimborsa()) toast('Rimborsati ' + cr(Tempo.PREST) + ' di debito.', 3500); aggiornaUfficio(true); };
+// ---- riepilogo nel pannello destro
+let sigRiass = '';
+function aggiornaRiass() {
+  const att = mondo.attivi(), aperti = mondo.aperti().slice().sort((a, b) => a.c.scad - b.c.scad);
+  const sig = [Math.round(mondo.saldo), mondo.debito, Math.floor(mondo.t), viaggioSel, ...mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)), ...mondo.firmati.map(f => f.id + f.stato)].join('|'); if (sig === sigRiass) return; sigRiass = sig;
+  const prossimo = mondo.prossimoInt - mondo.t, interesse = Math.round(mondo.debito * Tempo.TASSO);
+  let h = `<div class="riass" data-s="ufficio"><div class="t">SALDO <b style="color:${mondo.saldo < 0 ? '#ff6a6a' : '#fff'}">${cr(mondo.saldo)}</b></div><div class="s">debito ${cr(mondo.debito)} · interessi ${cr(interesse)} ${fraG(prossimo)}</div></div>`;
+  h += `<h2>VIAGGI <span class="small">(${att.length}/${Tempo.MAXPREN})</span></h2>` + (att.length ? att.map(p => { const N = O.FLOTTA[p.nave], cap = p.capacita === Infinity ? N.carico : p.capacita, ev = p.stato === 'prenotata' ? 'parte ' + fraG(p.tDep - mondo.t) : p.stato === 'in volo' ? 'arriva ' + fraG(p.tDep + p.tof - mondo.t) : 'in orbita';
+    return `<div class="riass ${p.id === viaggioSel ? 'sel' : ''}" data-v="${p.id}" style="${p.id === viaggioSel ? 'border-color:#7fe7ff' : ''}"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${ev} · carico ${mondo.caricoUsato(p)}/${cap} t${mondo.caricoUsato(p) ? '' : ' (vuoto)'}</div></div>`; }).join('') : '<div class="small">Nessun viaggio.</div>');
+  h += `<h2>CONTRATTI <span class="small">(${aperti.length}/${CT.MAX_FIRMATI})</span></h2>` + (aperti.length ? aperti.map(f => { const c = f.c, rit = mondo.t > c.scad; return `<div class="riass" data-s="contratti"><div class="t">${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)} · ${c.carico} t</div><div class="s">scade ${fraG(c.scad - mondo.t)} · ${rit ? '<span class="warn">in ritardo</span> · ' : ''}${STATI_F[f.stato]}</div></div>`; }).join('') : '<div class="small">Nessun contratto firmato.</div>');
+  $('riass').innerHTML = h;
+  $('riass').querySelectorAll('[data-s]').forEach(el => { el.onclick = () => apriSchermo(el.dataset.s); });
+  $('riass').querySelectorAll('[data-v]').forEach(el => { el.onclick = () => { viaggioSel = +el.dataset.v; caricaSel = new Set(); apriSchermo('viaggi'); aggiornaLista(true); sigRiass = ''; }; });
+}
 // ---- elenco dei viaggi prenotati
 let sigPren = '';
 function aggiornaLista(forza) {
   const att = mondo.attivi(), chiusi = mondo.pren.filter(p => !att.includes(p)).slice(-3).reverse();
-  const sig = mondo.pren.map(p => p.id + p.stato + p.dep.stato + p.arr.stato).join('|');
+  const sig = mondo.pren.map(p => p.id + p.stato + p.dep.stato + p.arr.stato + mondo.caricoUsato(p)).join('|');
   $('npren').textContent = '(' + att.length + '/' + Tempo.MAXPREN + ')';
   if (sig !== sigPren || forza) {
     sigPren = sig; const box = $('listaPren'); if (!att.length && !chiusi.length) box.textContent = 'Nessun viaggio prenotato.';
-    else box.innerHTML = att.map(p => `<div class="pren" id="pr${p.id}"><div class="t"><b>${O.FLOTTA[p.nave].nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div>${p.contratto ? `<div class="s">${p.contratto.carico} t di ${p.contratto.merce.toLowerCase()} · compenso ${cr(p.contratto.pay)} · entro ${p.contratto.tofMax} g</div>` : ''}<div class="s" id="ps${p.id}"></div>
-      <button id="pb${p.id}" data-p="${p.id}" data-a="${p.stato === 'prenotata' ? 'partenza' : 'arrivo'}"></button>${p.stato === 'prenotata' ? `<button id="pa${p.id}" data-p="${p.id}">Annulla</button>` : ''}</div>`).join('')
+    else box.innerHTML = att.map(p => `<div class="pren" id="pr${p.id}"><div class="t"><b>${O.FLOTTA[p.nave].nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">carico ${mondo.caricoUsato(p)}/${p.capacita === Infinity ? O.FLOTTA[p.nave].carico : p.capacita} t${mondo.caricoUsato(p) ? '' : ' (vuoto)'}</div><div class="s" id="ps${p.id}"></div>
+      <button id="pb${p.id}" data-p="${p.id}" data-a="${p.stato === 'prenotata' ? 'partenza' : 'arrivo'}"></button>${p.stato === 'prenotata' && !mondo.caricoUsato(p) ? `<button id="pa${p.id}" data-p="${p.id}">Annulla</button>` : ''}</div>`).join('')
       + chiusi.map(p => `<div class="pren fine"><div class="t">${O.FLOTTA[p.nave].nome} · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${{ conclusa: 'conclusa', mancata: 'lancio mancato · finestra persa', annullata: 'annullata' }[p.stato] || p.stato}</div></div>`).join('');
     box.querySelectorAll('.pren[id^=pr]').forEach(el => { el.onclick = e => { if (e.target.tagName !== 'BUTTON') selezionaViaggio(+el.id.slice(2)); }; });
     box.querySelectorAll('button[id^=pb]').forEach(b => { b.onclick = () => { mondo.premi(+b.dataset.p, b.dataset.a); aggiornaLista(true); }; });
@@ -1254,7 +1351,7 @@ $('calcv').addEventListener('click', e => { if (!CAL.hit) return; const r = $('c
 // ======================================================================================================
 let ultimoMs = Date.now(), nSalva = 0;
 function tick() { const n = Date.now(), dt = (n - ultimoMs) / 1000; ultimoMs = n; if (dt > 0) mondo.avanza(dt); t = mondo.t; }
-function aggiornaUI() { aggiornaContr(false); aggiornaFirm(false); aggiornaBanca(); aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
+function aggiornaUI() { aggiornaContr(false); aggiornaFirm(false); aggiornaRiass(); aggiornaSchermo(false); if (schermoAperto === 'ufficio') aggiornaBanca(); aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
 function frame(now) { tick(); aggiornaAnim(now); disegna(); aggiornaUI(); if (!$('cal').hidden) { passoCalendario(); disegnaCal(); } if (++nSalva % 60 === 0) salva(); requestAnimationFrame(frame); }
 // Scheda in secondo piano: il browser rallenta i timer della pagina (anche a 1 al minuto), e un tick distanziato oltre 2 s conterebbe come assenza.
 // Per questo il battito di 1 s arriva da un Web Worker, che il browser non rallenta; se non e' disponibile si ripiega sul timer normale.
