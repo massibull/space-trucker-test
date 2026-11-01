@@ -1,9 +1,38 @@
 <!DOCTYPE html>
-<html lang="it"><head><meta charset="utf-8"><title>Space Trucker - mappa e pianificatore (prototipo)</title>
+<html lang="it"><head><meta charset="utf-8"><title>Space Truckers</title>
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+  /* ===== KIT DELL'INTERFACCIA: nessun elemento nativo del browser deve essere visibile. Scrollbar, tendine, caselle, cursori, finestre di conferma e suggerimenti sono tutti disegnati qui, dai colori del tema. ===== */
+  :root{--t-bg:#05070d;--t-pannello:#08111a;--t-campo:#0b1722;--t-linea:#27455f;--t-linea2:#1d3347;--t-accento:#7fe7ff;--t-ok:#6bff9a;--t-avviso:#ffd37a;--t-errore:#ff6a6a;--t-testo:#cfe3f5;--t-muto:#7f98ae;--t-vel:.18s}
+  *{scrollbar-width:thin;scrollbar-color:rgba(127,231,255,.38) transparent}
+  ::-webkit-scrollbar{width:8px;height:8px;background:transparent} ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(127,231,255,.28);border:2px solid transparent;background-clip:padding-box;border-radius:6px;transition:background var(--t-vel)} ::-webkit-scrollbar-thumb:hover{background:rgba(127,231,255,.6);background-clip:padding-box}
+  ::-webkit-scrollbar-corner{background:transparent}
+  ::selection{background:rgba(127,231,255,.28);color:#fff}
+  button:focus-visible,.csel-b:focus-visible,input:focus-visible,summary:focus-visible{outline:1px solid var(--t-accento);outline-offset:2px} button:focus:not(:focus-visible){outline:none}
+  select.nativa{display:none !important}
+  .csel{position:relative;display:block;width:100%;min-width:0} .csel-b{min-width:0} .csel.auto{display:inline-block;width:auto;vertical-align:middle}
+  .csel-b{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;box-sizing:border-box;margin:0;padding:5px 8px;background:var(--t-campo);color:var(--t-testo);border:1px solid var(--t-linea);font:inherit;text-align:left;cursor:pointer;transition:border-color var(--t-vel),background var(--t-vel)}
+  .csel-b:hover{border-color:var(--t-accento)} .csel-b.aperta{border-color:var(--t-accento);background:rgba(127,231,255,.07)} .csel-b[disabled]{opacity:.45;cursor:not-allowed}
+  .csel-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1} .csel-a{color:var(--t-accento);font-size:10px;transition:transform var(--t-vel)} .csel-b.aperta .csel-a{transform:rotate(180deg)}
+  #cpop{position:fixed;z-index:60;max-height:min(50vh,360px);overflow-y:auto;background:rgba(8,17,26,.98);border:1px solid var(--t-accento);box-shadow:0 8px 28px rgba(0,0,0,.6),0 0 14px rgba(127,231,255,.18);padding:3px 0;animation:cpopIn .14s ease-out}
+  @keyframes cpopIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .cg{padding:6px 10px 2px;font-size:10px;color:var(--t-avviso);letter-spacing:.08em} .co{padding:5px 12px;color:var(--t-testo);cursor:pointer;white-space:nowrap;transition:background .1s}
+  .co:hover,.co.ev{background:rgba(127,231,255,.14);color:#fff} .co.sel{color:var(--t-accento)} .co.sel::before{content:'◆ ';font-size:9px} .co.dis{opacity:.4;cursor:not-allowed}
+  input[type=checkbox]{-webkit-appearance:none;appearance:none;width:15px;height:15px;margin:2px 0 0;padding:0;background:transparent;border:1px solid var(--t-linea);position:relative;flex:none;cursor:pointer;transition:all var(--t-vel)}
+  input[type=checkbox]:hover{border-color:var(--t-accento)} input[type=checkbox]:checked{background:rgba(127,231,255,.18);border-color:var(--t-accento)}
+  input[type=checkbox]:checked::after{content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--t-accento);border-width:0 2px 2px 0;transform:rotate(45deg)} input[type=checkbox]:disabled{opacity:.35;cursor:not-allowed}
+  input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;height:18px;margin:0;padding:0;border:0} input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(127,231,255,.4)} input[type=range]::-moz-range-track{height:2px;background:rgba(127,231,255,.4)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-5px;background:var(--t-bg);border:1px solid var(--t-accento);border-radius:50%;box-shadow:0 0 6px rgba(127,231,255,.4);transition:box-shadow var(--t-vel)}
+  input[type=range]::-moz-range-thumb{width:9px;height:9px;background:var(--t-bg);border:1px solid var(--t-accento);border-radius:50%} input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 10px rgba(127,231,255,.8)} input[type=range]:disabled{opacity:.4}
+  summary{list-style:none;cursor:pointer} summary::-webkit-details-marker{display:none} summary::before{content:'▸';display:inline-block;margin-right:6px;color:var(--t-accento);transition:transform var(--t-vel)} details[open]>summary::before{transform:rotate(90deg)}
+  #tip{position:fixed;z-index:70;max-width:260px;padding:4px 8px;background:rgba(8,17,26,.97);border:1px solid var(--t-accento);color:var(--t-testo);font-size:11px;pointer-events:none;box-shadow:0 0 10px rgba(127,231,255,.2);animation:cpopIn .12s ease-out}
+  #modale{position:fixed;inset:0;z-index:80;background:rgba(3,6,10,.72);display:flex;align-items:center;justify-content:center;animation:modIn .16s ease-out} @keyframes modIn{from{opacity:0}to{opacity:1}}
+  #modale .mb{background:var(--t-pannello);border:1px solid var(--t-accento);box-shadow:0 0 30px rgba(127,231,255,.25);padding:18px 22px;max-width:480px;line-height:1.6;animation:cpopIn .18s ease-out} #modale .mt{color:var(--t-accento);font-size:12px;letter-spacing:.08em;margin-bottom:8px} #modale .mx{margin-top:14px;display:flex;gap:8px;justify-content:flex-end}
+  #modale textarea{width:420px;max-width:100%;height:200px;box-sizing:border-box;background:var(--t-campo);color:var(--t-testo);border:1px solid var(--t-linea);font:11px ui-monospace,Menlo,monospace;padding:6px;resize:none}
   html,body{margin:0;height:100%;background:#05070d;color:#cfe3f5;font:13px ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+  [hidden]{display:none !important}
   #app{display:flex;height:100%}
   #mapw{flex:1;position:relative;min-width:0}
   #map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
@@ -28,7 +57,9 @@
   .grande .fuori b{color:#ff6a6a}
   details{margin-top:8px} summary{cursor:pointer;color:#7f98ae;font-size:11px}
   .row{display:flex;justify-content:space-between;gap:8px;margin:2px 0}.row span:first-child{color:#7f98ae}.ok{color:#6bff9a}.warn{color:#ffd37a}
-  #hud{position:absolute;left:12px;top:10px;font-size:14px;color:#cfe3f5;pointer-events:none;text-shadow:0 0 4px #000}
+  #hud{position:absolute;right:52px;top:10px;max-width:62%;text-align:right;font-size:14px;color:#cfe3f5;pointer-events:none;text-shadow:0 0 4px #000}
+  #btnTeschio{position:absolute;right:12px;top:9px;width:30px;height:28px;padding:0;margin:0;font-size:15px;line-height:1;background:rgba(8,17,26,.55);border:1px solid var(--t-linea);color:var(--t-muto);cursor:pointer;z-index:3} #btnTeschio:hover{border-color:var(--t-errore);color:#ffb3b3;box-shadow:0 0 8px rgba(255,106,106,.35)}
+  #modale button.rosso{border-color:var(--t-errore);color:#ffb3b3} #modale button.rosso:hover{background:rgba(255,106,106,.16);border-color:#ff9a9a;color:#fff}
   #bar{position:absolute;left:12px;bottom:10px;right:12px}
   .small{color:#7f98ae;font-size:11px;line-height:1.5}
   #zoom{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:30px;display:flex;flex-direction:column;align-items:center;gap:4px;user-select:none;touch-action:none;opacity:.38;transition:opacity .25s}
@@ -62,13 +93,40 @@
   #banca b{font-size:15px;color:#fff} #banca button{margin:4px 4px 0 0}
   .chk{display:flex;gap:6px;align-items:flex-start;margin:4px 0;line-height:1.45} .chk input{width:auto;margin-top:2px}
   .contr{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:5px 0;line-height:1.5} .contr .t{color:#e6eef5;font-size:12.5px} .contr .s{color:#9fb4c8;font-size:11px} .contr button{padding:3px 10px;margin:4px 0 0;font-size:11.5px;background:#1e6b3a;border-color:#6bff9a;color:#fff} .contr button:disabled{opacity:.45;background:#16202b;border-color:#27455f}
-  #schermo{position:absolute;left:0;top:0;bottom:112px;width:min(100%,820px);background:#070d15;border-right:1px solid #27455f;border-bottom:1px solid #27455f;z-index:4;display:flex;flex-direction:column}
+  #schermo{position:absolute;left:0;top:0;bottom:112px;width:min(100%,600px);background:#070d15;border-right:1px solid #27455f;border-bottom:1px solid #27455f;z-index:4;display:flex;flex-direction:column}
   #stab{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid #1d3347;align-items:center;flex-wrap:wrap} #stab .sp{flex:1} #sBody{flex:1;overflow-y:auto;padding:6px 16px 14px} #sBody section[hidden]{display:none}
   #navBtns{display:flex;flex-wrap:wrap;gap:4px;margin:10px 0} #navBtns button{flex:1;min-width:84px}
   .riass{border:1px solid #27455f;background:#0a1620;padding:7px 9px;margin:6px 0;line-height:1.5;cursor:pointer} .riass:hover{border-color:#7fe7ff} .riass .t{color:#e6eef5;font-size:12.5px} .riass .s{color:#9fb4c8;font-size:11px}
   .dt{color:#6f8aa0;font-size:10px} .bar{height:6px;background:#16202b;margin:3px 0;border:1px solid #27455f} .bar>div{height:100%;background:#6bff9a}
   table.mov{width:100%;border-collapse:collapse;font-size:11.5px} table.mov td,table.mov th{padding:3px 6px;border-bottom:1px solid #141c27;text-align:left} table.mov th{color:#7f98ae;font-weight:normal} table.mov td.n,table.mov th.n{text-align:right}
   .pos{color:#6bff9a} .neg{color:#ff8a8a} #sBody h2:first-child{margin-top:8px}
+  /* aspetti delle schermate: solido, vetro (trasparente con linee sottili), hud (solo testo e pulsanti in sovrimpressione), fantasma (vetro che si attenua quando il mouse e' altrove) */
+  #schermo{transition:opacity .25s}
+  #schermo.vetro,#schermo.hud,#schermo.fantasma{background:linear-gradient(90deg,rgba(5,9,15,.62),rgba(5,9,15,.28) 80%,rgba(5,9,15,0));border:0;text-shadow:0 0 5px #000,0 0 2px #000}
+  #schermo.vetro #stab,#schermo.hud #stab,#schermo.fantasma #stab{border-bottom:1px solid rgba(127,231,255,.18)}
+  #schermo.vetro .contr,#schermo.fantasma .contr{background:rgba(8,17,26,.30);border-color:rgba(127,231,255,.32);backdrop-filter:blur(5px)}
+  #schermo.hud .contr{background:none;border:0;border-left:2px solid rgba(127,231,255,.4);padding-left:10px}
+  #schermo.hud .contr.fine,#schermo.vetro .contr.fine{opacity:.6}
+  #schermo.vetro button,#schermo.hud button,#schermo.fantasma button,#schermo.vetro select,#schermo.hud select,#schermo.fantasma select{background:transparent;border:1px solid rgba(127,231,255,.45);color:rgba(220,236,250,.88);transition:all .18s}
+  #schermo.vetro button:hover,#schermo.hud button:hover,#schermo.fantasma button:hover{background:rgba(127,231,255,.13);border-color:#7fe7ff;color:#fff;box-shadow:0 0 10px rgba(127,231,255,.35)}
+  #schermo.vetro button.on,#schermo.hud button.on,#schermo.fantasma button.on{background:rgba(127,231,255,.2);border-color:#7fe7ff;color:#fff}
+  #schermo.vetro button.go,#schermo.hud button.go,#schermo.fantasma button.go,#schermo.vetro .contr button,#schermo.hud .contr button,#schermo.fantasma .contr button{background:transparent;border-color:rgba(107,255,154,.6);color:#bfffd2}
+  #schermo.vetro button.go:hover,#schermo.hud button.go:hover,#schermo.fantasma button.go:hover,#schermo.vetro .contr button:hover,#schermo.hud .contr button:hover,#schermo.fantasma .contr button:hover{background:rgba(107,255,154,.16);border-color:#6bff9a;color:#fff}
+  #schermo.vetro button:disabled,#schermo.hud button:disabled,#schermo.fantasma button:disabled{opacity:.35;background:transparent}
+  #schermo.vetro .grande>div,#schermo.fantasma .grande>div,#schermo.vetro .win,#schermo.fantasma .win{background:rgba(8,17,26,.30);border-color:rgba(127,231,255,.32);backdrop-filter:blur(5px)}
+  #schermo.hud .grande>div,#schermo.hud .win{background:none;border:0;border-left:2px solid rgba(127,231,255,.4)} #schermo.hud .win:hover,#schermo.vetro .win:hover,#schermo.fantasma .win:hover{border-color:#6bff9a;background:rgba(107,255,154,.08)}
+  #schermo.hud .bar,#schermo.vetro .bar,#schermo.fantasma .bar{background:rgba(22,32,43,.35);border-color:rgba(127,231,255,.35)}
+  #schermo.vetro #pork,#schermo.hud #pork,#schermo.fantasma #pork{opacity:.88}
+  #mapw.sch #hud{right:52px}
+  #mapw.sch #hud .small{display:none} #stab button,#stab select{padding:4px 7px;font-size:12px;margin:0} #stab select{width:128px}
+  #schermo.hud #sBody h2,#schermo.vetro #sBody h2,#schermo.fantasma #sBody h2{text-shadow:0 0 6px #000}
+  #schermo.fantasma{opacity:.38} #schermo.fantasma:hover,#schermo.fantasma:focus-within{opacity:1}
+  .arrivo{border:1px solid #7fe7ff;background:rgba(127,231,255,.07);padding:8px 12px;margin-bottom:8px} .arrivo .et{display:block;font-size:10px;color:#7f98ae;letter-spacing:.08em} .arrivo b{display:block;font-size:30px;color:#fff;font-weight:700;line-height:1.1} .arrivo .sub{color:#9fb4c8;font-size:11px}
+  #banDett{text-align:left;font-size:11px;line-height:1.55;color:#cfe3f5;border-top:1px solid #27455f;margin:8px 0;padding-top:6px;max-width:520px}
+  .win,.wh{grid-template-columns:1.1fr 1.1fr .7fr 1fr}
+  #banAltri{margin-top:10px;max-width:520px} .banAlt{display:flex;align-items:center;gap:8px;border-top:1px solid #27455f;padding:5px 0;text-align:left;font-size:11px} .banAlt .bt{flex:1;color:#cfe3f5} .banAlt .bc{color:#fff;font-weight:700;min-width:64px;text-align:right} .banAlt.rit .bc{color:#ff6a6a} .banAlt button{margin:0;padding:3px 10px;font-size:11px}
+  #s-ufficio:not([hidden]){display:flex;flex-direction:column;height:100%} #s-ufficio #movim{flex:1;min-height:0;overflow-y:auto;padding-right:4px} #s-ufficio h2{flex:none} #uffBanca{flex:none} table.mov th{position:sticky;top:0;background:var(--t-pannello,#08111a);z-index:1}
+  .fg,.fr{white-space:nowrap} .fr-line{min-height:1.5em;white-space:nowrap}
   .pren{cursor:pointer} .pren.sel{border-color:#7fe7ff;box-shadow:0 0 0 1px rgba(127,231,255,.35)}
   .pren.fine{opacity:.6;border-color:#1d2a38;cursor:default} .pren.att{border-color:#ffb347}
   .pren .t{color:#e6eef5;font-size:12.5px} .pren .s{color:#9fb4c8;font-size:11px} .pren button{padding:3px 10px;margin:4px 6px 0 0;font-size:11.5px}
@@ -77,21 +135,24 @@
   .nota{margin-top:16px;border-top:1px solid #1d3347;padding-top:8px}
 </style></head><body>
 <div id="app">
-  <div id="mapw"><canvas id="map"></canvas><div id="hud"></div>
+  <div id="mapw"><canvas id="map"></canvas><div id="hud"></div><button id="btnTeschio" title="Abbandona la partita (game over)" hidden><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:auto"><path d="M3 7.2C3 4.2 5.2 2 8 2s5 2.2 5 5.2c0 1.6-.7 2.6-1.8 3.3V13H4.8v-2.5C3.7 9.8 3 8.8 3 7.2z"/><circle cx="6" cy="7.6" r="1.3"/><circle cx="10" cy="7.6" r="1.3"/><path d="M8 9.6v1.1M6.4 13v-1.5M9.6 13v-1.5"/></svg></button>
     <div id="zoom"><button id="zin" title="avvicina (tasto +)"></button><div id="ztrack"><div id="zknob"></div></div><button id="zout" title="allontana (tasto -)"></button></div>
-    <div id="banner" hidden><div id="banTit"></div><div id="banConto"></div><div id="banSub"></div><button id="banBtn">Parti</button></div>
+    <div id="banner" hidden><div id="banTit"></div><div id="banConto"></div><div id="banSub"></div><div id="banDett"></div><button id="banBtn">Parti</button><div id="banAltri"></div></div>
     <div id="toast" hidden></div>
     <div id="cal" hidden><button id="calChiudi">chiudi</button><canvas id="calcv"></canvas></div>
     <div id="schermo" hidden>
-      <div id="stab"><button data-s="ufficio">Ufficio</button><button data-s="flotta">Flotta</button><button data-s="porto">Porto</button><button data-s="contratti">Contratti</button><button data-s="viaggi">Viaggi</button><span class="sp"></span><button id="sChiudi">Chiudi ✕</button></div>
+      <div id="stab"><button data-s="ufficio">Ufficio</button><button data-s="flotta">Flotta</button><button data-s="porto">Porto</button><button data-s="contratti">Contratti</button><button data-s="viaggi">Viaggi</button><span class="sp"></span><select id="aspetto" style="width:auto" title="Aspetto delle schermate"><option value="solido">aspetto: solido</option><option value="vetro">aspetto: vetro</option><option value="hud">aspetto: hud</option><option value="fantasma">aspetto: fantasma</option></select> <button id="sChiudi">Chiudi ✕</button></div>
       <div id="sBody">
         <section id="s-ufficio" hidden>
           <h2>CONTI</h2><div id="uffBanca" class="contr"><div class="t">SALDO <b id="bSaldo"></b></div><div class="s" id="bDebito"></div><button id="bPrest">Prendi un prestito (+5.000)</button> <button id="bRimb">Rimborsa 5.000</button></div>
+          <div id="avvisiSis" class="contr" style="flex:none"></div>
           <h2>MOVIMENTI</h2><div id="movim" class="small"></div>
         </section>
         <section id="s-flotta" hidden><h2>FLOTTA</h2><div id="flottaBox"></div></section>
         <section id="s-porto" hidden>
-          <h2>PORTO · CONTRATTI DISPONIBILI</h2><label>porto</label><select id="portoContr"></select>
+          <h2>RIFORNIMENTO</h2><div class="small" style="margin-bottom:4px">Il propellente è del giocatore: ogni partenza consuma quello che c'è nel serbatoio. Con un serbatoio insufficiente la nave e il carico vanno persi a metà viaggio.</div><div id="rifornBox"></div>
+          <h2>MAGAZZINO DEL PORTO</h2><div id="stockBox" class="small"></div>
+          <h2>CONTRATTI DISPONIBILI</h2><label>porto</label><select id="portoContr"></select>
           <div class="small" style="margin:4px 0">Firmare non vincola a nessun viaggio: il collegamento avviene con l'operazione di carico, dalla schermata Viaggi.</div>
           <div id="listaContr"></div>
         </section>
@@ -103,8 +164,8 @@
           <button id="apriPian" class="go">Pianifica viaggio</button>
           <div id="pianifica" hidden>
             <h2>PIANIFICAZIONE</h2>
-            <div class="small">Durante la pianificazione il tempo scorre a velocità reale. Prenotata la finestra, il carico dei contratti si fa dal viaggio.</div>
-            <div style="display:flex;gap:8px"><div style="flex:1"><label>partenza</label><select id="orig"></select></div><div style="flex:1"><label>arrivo</label><select id="dest"></select></div><div style="flex:1"><label>nave</label><select id="nave"></select></div></div>
+            <div class="small">Mentre questa scheda è aperta il tempo scorre in tempo reale (cambia scheda o chiudi per accelerare: la pianificazione resta salvata). Prenotata la finestra, il carico dei contratti si fa dal viaggio.</div>
+            <div style="display:flex;gap:8px"><div style="flex:1;min-width:0"><label>partenza</label><select id="orig"></select></div><div style="flex:1;min-width:0"><label>arrivo</label><select id="dest"></select></div><div style="flex:1.3;min-width:0"><label>nave</label><select id="nave"></select></div></div>
             <div class="small" id="naveInfo" style="margin-top:3px"></div>
             <button id="cerca" style="width:100%;margin-top:6px">Cerca finestra</button>
             <h2>FINESTRE DI LANCIO</h2>
@@ -134,7 +195,7 @@
       <div id="regSint" class="small" style="margin-top:6px"></div><pre id="regTxt"></pre>
       <button id="regCopia">Copia il registro</button> <button id="nuovaProva">Nuova prova</button>
     </details>
-        <div class="small nota">Prototipo di prova, build 8 del 31 ottobre 2026. Non è il gioco finale: i valori delle navi, dei costi e delle penali sono provvisori. Il progresso è salvato nel tuo browser. La prova registra dati di utilizzo anonimi (azioni nella mappa, nessun dato personale) per capire come viene usata.</div>
+        <div class="small nota">Prototipo di prova, build 9 del 1 novembre 2026. Non è il gioco finale: i valori delle navi, dei costi e delle penali sono provvisori. Il progresso è salvato nel tuo browser. La prova registra dati di utilizzo anonimi (azioni nella mappa, nessun dato personale) e, a fine partita, il tempo impiegato come record anonimo dei tester.</div>
   </div>
 </div>
 <script>
@@ -188,8 +249,25 @@
     LUNA('caronte', 'Caronte', 'plutone', 19591, 6.38723, 20),
   ];
 
-  // Porti (come nel gioco in Python): pianeta/luna -> nome del porto
-  const PORTI = { mercurio: 'Caloris', venere: 'Afrodite', terra: 'Terra', luna: 'Luna', marte: 'Ares', fobos: 'Fobos', vesta: 'Vesta', cerere: 'Cerere', igea: 'Igea', pallade: 'Pallade', ganimede: 'Ganimede', titano: 'Titano', tritone: 'Tritone' };
+  // Porti: regole (vedi docs/enciclopedia/porti.md). Rocciosi interni: porto sul pianeta; Terra e' unica con due porti (Terra e Luna); i giganti non hanno porti sul pianeta:
+  // si usano satelliti rocciosi o ghiacciati, oppure stazioni orbitanti (scientifiche se non c'e' uno sfruttamento realistico); fascia: stazioni sulle rocce.
+  // corpo = dove si trova il porto; pianeta = il pianeta a cui appartiene (le rocce della fascia non ne hanno); tipo: commerciale | scientifico; orbitante = stazione in orbita, non su un corpo.
+  const PORTI_INFO = {
+    mercurio: { nome: 'Caloris', corpo: 'mercurio', pianeta: 'mercurio', tipo: 'commerciale' }, venere: { nome: 'Afrodite', corpo: 'venere', pianeta: 'venere', tipo: 'commerciale' },
+    terra: { nome: 'Terra', corpo: 'terra', pianeta: 'terra', tipo: 'commerciale' }, luna: { nome: 'Luna', corpo: 'luna', pianeta: 'terra', tipo: 'commerciale' },
+    marte: { nome: 'Ares', corpo: 'marte', pianeta: 'marte', tipo: 'commerciale' }, fobos: { nome: 'Fobos', corpo: 'fobos', pianeta: 'marte', tipo: 'commerciale' },
+    vesta: { nome: 'Vesta', corpo: 'vesta', pianeta: null, tipo: 'commerciale' }, cerere: { nome: 'Cerere', corpo: 'cerere', pianeta: null, tipo: 'commerciale' },
+    igea: { nome: 'Igea', corpo: 'igea', pianeta: null, tipo: 'commerciale' }, pallade: { nome: 'Pallade', corpo: 'pallade', pianeta: null, tipo: 'commerciale' },
+    ganimede: { nome: 'Ganimede', corpo: 'ganimede', pianeta: 'giove', tipo: 'commerciale' }, titano: { nome: 'Titano', corpo: 'titano', pianeta: 'saturno', tipo: 'commerciale' },
+    urano: { nome: 'Urano', corpo: 'urano', pianeta: 'urano', tipo: 'scientifico', orbitante: true }, tritone: { nome: 'Tritone', corpo: 'tritone', pianeta: 'nettuno', tipo: 'commerciale' },
+    caronte: { nome: 'Caronte', corpo: 'caronte', pianeta: 'plutone', tipo: 'scientifico' },
+  };
+  const PORTI = {}; for (const k in PORTI_INFO) PORTI[k] = PORTI_INFO[k].nome;
+  // Nome completo, uguale ovunque: i porti sono spazioporti di commercio (con magazzino, rifornimento e assistenza); le stazioni scientifiche no.
+  const etichettaPorto = id => { const e = PORTI_INFO[id]; return e ? (e.tipo === 'scientifico' ? 'Stazione scientifica ' : 'Porto ') + e.nome : ''; };
+  // Tipo di porto di un luogo (id di porto o di pianeta): 'commerciale', 'scientifico' o null se non c'e' porto.
+  const tipoPorto = id => { if (PORTI_INFO[id]) return PORTI_INFO[id].tipo; const l = Object.keys(PORTI_INFO).find(k => PORTI_INFO[k].pianeta === id); return l ? PORTI_INFO[l].tipo : null; };
+  const portiDi = pianeta => Object.keys(PORTI_INFO).filter(k => PORTI_INFO[k].pianeta === pianeta).map(k => Object.assign({ id: k }, PORTI_INFO[k]));
 
   // Posizione e velocita' eliocentriche (km, km/s) al tempo t (giorni dal J2000)
   function stato(c, t) {
@@ -343,7 +421,7 @@
     return { giorni: tof / DAY, dvKms: 2 * Math.sqrt(g * G0 * d * 1000) / 1000, dist: d / AU };
   }
 
-  const API = { RP_MIN, AU, MU_SUN, DAY, DEG, giorni, data, PIANETI, ALTRI, CORPI, LUNE, PORTI, per_id, stato, posLuna, orbita, orbitaVista, lambert, propaga, periodo, sinodico, hohmann, piano, bruciaturaOrbita, servizio: k => { K_SERVIZIO = k; }, MOTORI, FLOTTA, NAVE_PROVA, propellente, griglia, grigliaInit, grigliaAvanza, torcia };
+  const API = { RP_MIN, AU, MU_SUN, DAY, DEG, giorni, data, PIANETI, ALTRI, CORPI, LUNE, PORTI, PORTI_INFO, portiDi, etichettaPorto, tipoPorto, per_id, stato, posLuna, orbita, orbitaVista, lambert, propaga, periodo, sinodico, hohmann, piano, bruciaturaOrbita, servizio: k => { K_SERVIZIO = k; }, MOTORI, FLOTTA, NAVE_PROVA, propellente, griglia, grigliaInit, grigliaAvanza, torcia };
   if (typeof module !== 'undefined') module.exports = API; else root.Orbite = API;
 })(this);
 
@@ -364,14 +442,16 @@
   const ROTTE = {}, DA = {};
   for (const [a, b, dv, tof, t0, sin] of RIGHE) { ROTTE[a + '>' + b] = ROTTE[b + '>' + a] = { dv, tof, t0, sin }; (DA[a] = DA[a] || []).push(b); (DA[b] = DA[b] || []).push(a); }
   const PORTI = ['mercurio', 'venere', 'terra', 'marte', 'vesta', 'cerere', 'igea', 'pallade'];
-  const MERCI = ['Acqua', 'Elettronica', 'Derrate alimentari', 'Medicinali', 'Minerali', 'Componenti di ricambio', 'Isotopi', 'Semi e fertilizzanti'];
+  // Catalogo dei materiali trasportabili (massimo 10 tipi, per ora). Base della futura "enciclopedia del gioco" (docs/enciclopedia/materiali.md): lo stock dei porti ricorda tipo e quantita'.
+  const MATERIALI = [{ id: 'acqua', nome: 'Acqua' }, { id: 'elettronica', nome: 'Elettronica' }, { id: 'derrate', nome: 'Derrate alimentari' }, { id: 'medicinali', nome: 'Medicinali' }, { id: 'minerali', nome: 'Minerali' },
+                     { id: 'ricambi', nome: 'Componenti di ricambio' }, { id: 'isotopi', nome: 'Isotopi' }, { id: 'fertilizzanti', nome: 'Semi e fertilizzanti' }, { id: 'metalli', nome: 'Metalli lavorati' }, { id: 'chimici', nome: 'Composti chimici' }];
+  const MERCI = MATERIALI.map(m => m.nome);
   const CARICHI = [1, 2, 2, 4, 6, 8];                                           // tonnellate: meta' circa entra anche in un Destriero (carico 2 t)
   const PAGA_PER_T_KMS = 300;                                                   // crediti per tonnellata e per km/s di dv minimo (provvisorio)
   const PREZZO_PROP = { chimico: 120, nucleare: 300 };                           // crediti per tonnellata di propellente (provvisorio)
-  const RITARDO_AL_GIORNO = 0.02;                                               // -2% del compenso per ogni giorno di ritardo sulla data di consegna (zero dopo 50 giorni)
-  const GRAZIA = 50;                                                            // oltre questi giorni dalla scadenza, un contratto non consegnato decade
-  const PENALE_DECADUTO = 0.15, PENALE_ANNULLO = 0.10;                          // quota del compenso
-  const API = { EPOCA: 0, SLOT_PER_PORTO, MAX_FIRMATI, PORTI, ROTTE, MERCI, PREZZO_PROP, RITARDO_AL_GIORNO, GRAZIA, PENALE_DECADUTO, PENALE_ANNULLO, PREP };
+  // Ritardo in percentuale della durata D del contratto (dalla firma alla data di consegna): -1% del compenso ogni 1% di D di ritardo (zero a D); oltre, penale +1% ogni 1% di D, piena a 2D (il contratto scade).
+  const PENALE_ANNULLO = 0.10, DURATA_MIN = 30;
+  const API = { EPOCA: 0, SLOT_PER_PORTO, MAX_FIRMATI, PORTI, ROTTE, MATERIALI, MERCI, PREZZO_PROP, PENALE_ANNULLO, DURATA_MIN, PREP };
 
   function seme(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rnd(s) { let a = s >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -384,16 +464,16 @@
     const cand = dests.map(d => ({ d, tw: prossimaFinestra(ROTTE[porto + '>' + d], tFrom + PREP) }));
     let ok = cand.filter(c => c.tw - tFrom <= 900); if (!ok.length) ok = [cand.reduce((a, b) => b.tw < a.tw ? b : a)];       // finestra non troppo lontana
     const sc = ok[Math.floor(R() * ok.length)], dest = sc.d, r = ROTTE[porto + '>' + dest], tw = sc.tw;
-    const carico = CARICHI[Math.floor(R() * CARICHI.length)], merce = MERCI[Math.floor(R() * MERCI.length)];
+    const carico = CARICHI[Math.floor(R() * CARICHI.length)], mt = MATERIALI[Math.floor(R() * MATERIALI.length)], merce = mt.nome;
     const slack = 0.08 + 0.32 * R();                                                                                     // margine sulla durata di riferimento
     const scad = Math.round(tw + r.tof * (1 + slack)), bonus = 1 + 0.5 * (0.40 - slack) / 0.32;                          // data stretta = paga di piu' (fino a +50%)
     const pay = Math.round(carico * r.dv * PAGA_PER_T_KMS * bonus * (0.92 + 0.16 * R()) / 10) * 10;
-    return { id: porto + '-' + k + '-' + n, porto, orig: porto, dest, carico, merce, pay, scad, valida: Math.max(PREP, Math.round(tw - tFrom)), tFrom, dv: r.dv, tof: r.tof, tw: Math.round(tw) };
+    return { id: porto + '-' + k + '-' + n, porto, orig: porto, dest, carico, merce, mat: mt.id, pay, scad, valida: Math.max(PREP, Math.round(tw - tFrom)), tFrom, dv: r.dv, tof: r.tof, tw: Math.round(tw) };
   }
-  // Compenso alla consegna: pieno entro la data; dopo, -2% per ogni giorno di ritardo (zero dopo 50 giorni).
-  function compenso(pay, tArrivo, scad) {
-    const ritardo = Math.max(0, Math.ceil(tArrivo - scad - 1e-9)), f = Math.max(0, 1 - RITARDO_AL_GIORNO * ritardo);
-    return { importo: Math.round(pay * f / 10) * 10, f, ritardo };
+  // Compenso alla consegna in base al ritardo rispetto alla data, in percentuale della durata D del contratto.
+  function compenso(pay, tArrivo, scad, D) {
+    D = Math.max(DURATA_MIN, D || DURATA_MIN); const L = Math.max(0, Math.ceil(tArrivo - scad - 1e-9)), f = Math.max(0, 1 - L / D), pen = L > D ? Math.min(1, (L - D) / D) : 0;
+    return { importo: Math.round(pay * f / 10) * 10, f, ritardo: L, penale: Math.round(pay * pen / 10) * 10, pen, scaduto: L >= 2 * D, D };
   }
   Object.assign(API, { genera, compenso, seme, prossimaFinestra });
   if (typeof module !== 'undefined') module.exports = API; else root.Contratti = API;
@@ -407,8 +487,10 @@
 (function (root) {
   const DAY = 86400, PRE = 30, PRE_BG = 120, RAMPA = 2, RIT = 30, CONTO = 10, K = 0.62, STALLO = 2, PASSO = 0.2;
   const ALONE_D = 5 / 24, MAXPREN = 5, VMAX = 86400;
-  const SALDO0 = 20000, TASSO = 0.01, GIORNI_INT = 30, PREST = 5000, MAX_DEBITO = 60000;       // prestito iniziale = saldo iniziale; interesse = TASSO del debito ogni GIORNI_INT giorni (provvisori)
-  const RITARDO_AL_GIORNO = 0.02, GRAZIA = 50, PENALE_DECADUTO = 0.15, PENALE_ANNULLO = 0.10, MAX_FIRMATI = 6;
+  const SALDO0 = 20000, TASSO = 0.01, GIORNI_INT = 30, PREST = 5000, MAX_PRESTITI = 10;       // prestito iniziale = saldo iniziale; interesse = TASSO del debito ogni GIORNI_INT giorni (provvisori)
+  const STOCK_CAP = 10, STOCK_AFFITTO = 1;                                        // stock di base per porto (t) e affitto (cr per tonnellata e per giorno)
+  const OBIETTIVO = 50000;                                                          // traguardo: saldo di almeno questi crediti e nessun debito
+  const PENALE_ANNULLO = 0.10, MAX_FIRMATI = 6, DURATA_MIN = 30;
   const PRESET = [{ nome: 'tempo reale', v: 1 }, { nome: 'oraria', v: 60 }, { nome: 'giornaliera', v: 1440 }, { nome: 'di gioco', v: 86400 }];
   const PENALI = { ritardoAlSecondo: 50, partenzaMancata: 5000, arrivoMancato: 2000, annullaMax: 3000 };     // crediti PROVVISORI e inventati
 
@@ -428,19 +510,37 @@
   const sliderDaVel = v => Math.log(Math.max(1, Math.min(VMAX, v))) / Math.log(VMAX);
   const bucketVel = v => v < 8 ? 'tempo reale' : v < 200 ? 'oraria' : v < 8000 ? 'giornaliera' : 'di gioco';
 
-  const compensoDi = (pay, tArrivo, scad) => { const ritardo = Math.max(0, Math.ceil(tArrivo - scad - 1e-9)), f = Math.max(0, 1 - RITARDO_AL_GIORNO * ritardo); return { importo: Math.round(pay * f / 10) * 10, f, ritardo }; };
+  // Il ritardo si misura in percentuale della durata del contratto D (dalla firma alla data di consegna): ogni 1% di D di ritardo toglie l'1% del compenso;
+  // a ritardo = D il compenso e' zero; oltre, la penale cresce dell'1% del compenso per ogni 1% di D, fino al 100% a ritardo = 2D (il contratto scade).
+  const compensoDi = (pay, tArrivo, scad, D) => { D = Math.max(DURATA_MIN, D || DURATA_MIN); const L = Math.max(0, Math.ceil(tArrivo - scad - 1e-9)), f = Math.max(0, 1 - L / D), pen = L > D ? Math.min(1, (L - D) / D) : 0; return { importo: Math.round(pay * f / 10) * 10, f, ritardo: L, penale: Math.round(pay * pen / 10) * 10, pen, scaduto: L >= 2 * D, D }; };
+  const durataC = f => Math.max(DURATA_MIN, f.c.scad - (f.firmaT !== undefined ? f.firmaT : f.c.tFrom));
+  const f1t = x => x.toFixed(1).replace('.', ',');
   class Mondo {
     constructor(t0) {
       this.t = t0; this.vel = 1; this.forzato = false; this.tr = 0; this.pren = []; this.log = []; this.seq = 1; this.penali = 0;
       this.stat = { ricerche: 0, prenotazioni: 0, annullamenti: 0, reazioni: [], mancati: 0, ritardi: 0, velSec: {}, pianifSec: 0, inizioMs: 0 };
-      this.saldo = SALDO0; this.movimenti = []; this.debito = SALDO0; this.prossimoInt = t0 + GIORNI_INT; this.offerte = {}; this.firmati = []; this.generaContratto = null; this.nascosta = false; this.rampaTr = -1e9; this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
+      this.saldo = SALDO0; this.prestiti = 0; this.gameOver = null; this.minPropNec = null; this.prezzoProp = null; this.avviato = true; this.tAvvio = t0; this.fine = null; this.propaga = null; this.riep = { viaggi: 0, consegne: 0, compensi: 0, penali: 0, interessi: 0, affitto: 0, carburante: 0, perse: 0, firmati: 0, annullati: 0, scaduti: 0, ton: 0 }; this.tipoPorto = null; this.stock = {}; this.relitti = []; this.navi = {}; this.movimenti = []; this.debito = SALDO0; this.prossimoInt = t0 + GIORNI_INT; this.offerte = {}; this.firmati = []; this.generaContratto = null; this.nascosta = false; this.rampaTr = -1e9; this.tetto = () => Infinity; this.on = () => {}; this.nuovoId = 1;
     }
     muovi(imp, desc) { this.saldo += imp; this.movimenti.push({ t: this.t, desc, imp, saldo: this.saldo }); if (this.movimenti.length > 300) this.movimenti.shift(); }     // ogni variazione del saldo e' registrata (registro dei movimenti)
-    penale(x, desc) { x = x || 0; this.penali += x; if (x) this.muovi(-x, desc || 'Penale'); }
+    penale(x, desc) { x = x || 0; this.penali += x; this.riep.penali += x; if (x) this.muovi(-x, desc || 'Penale'); }
     velUtente() { return this.forzato ? 1 : Math.max(1, Math.min(VMAX, this.vel)); }
     registra(tipo, dati) { const e = Object.assign({ tr: +this.tr.toFixed(2), t: this.t, tipo }, dati || {}); this.log.push(e); if (this.log.length > 800) this.log.shift(); this.on('log', e); return e; }
     attivi() { return this.pren.filter(p => ['prenotata', 'in volo', 'in orbita'].includes(p.stato)); }
     naveImpegnata(id) { return this.attivi().some(p => p.nave === id); }
+    // Dove sara' la nave e da quando e' libera: dopo l'ultimo viaggio prenotato (catena), altrimenti dov'e' ora. 'da' = arrivo previsto + 5 ore.
+    postoNave(id) {
+      const att = this.pren.filter(p => p.nave === id && ['prenotata', 'in volo', 'in orbita'].includes(p.stato)), nv = this.navi[id];
+      if (!att.length) return { porto: nv && nv.porto || null, da: this.t, coda: [], inOrbita: false };
+      const last = att.reduce((a, b) => b.tDep + b.tof > a.tDep + a.tof ? b : a);
+      return { porto: last.dest, da: last.tDep + last.tof + ALONE_D, coda: att, inOrbita: last.stato === 'in orbita' };
+    }
+    guardiaNave(p) {                                                        // al momento della partenza la nave deve essere nel porto di partenza e libera dal viaggio precedente
+      const prima = this.pren.filter(q => q !== p && q.nave === p.nave && ['prenotata', 'in volo', 'in orbita'].includes(q.stato) && q.tDep < p.tDep), nv = this.navi[p.nave];
+      if (prima.length) return 'la nave è ancora impegnata nel viaggio precedente';
+      if (nv && nv.porto && nv.porto !== p.orig) return 'la nave si trova a ' + nv.porto + ', non a ' + p.orig;
+      return null;
+    }
+    annullaDUfficio(p, motivo) { p.stato = 'annullata'; this.rilascia(p); this.registra('viaggio_annullato_nave', { pren: p.id, nave: p.nave, motivo }); this.on('annullato_ufficio', p, motivo); }
     prossimaApp(p) { return p.stato === 'prenotata' ? p.dep : (p.stato === 'in volo' ? p.arr : null); }
     // velocita' effettiva in questo istante
     velEffettiva() {
@@ -451,7 +551,7 @@
     }
     inPreavviso() { return this.pren.some(p => [p.dep, p.arr].some(ap => ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo'))); }
     avanza(dtReal) {
-      if (!(dtReal > 0)) return; if (dtReal > STALLO) return this.assenza(dtReal);
+      if (!(dtReal > 0) || !this.avviato || this.fine || this.gameOver) return; if (dtReal > STALLO) return this.assenza(dtReal);
       let rem = dtReal; while (rem > 1e-9) { const dt = Math.min(rem, PASSO); this.passo(dt); rem -= dt; }
     }
     passo(dt) {
@@ -464,7 +564,7 @@
     }
     macchina(p, ap) {
       const R = (ap.tEv - this.t) * DAY, vu = this.velUtente();
-      if (ap.stato === 'attesa') { if (toGo(R, vu) <= (this.nascosta ? PRE_BG : PRE)) { ap.stato = 'preavviso'; ap.preTr = this.tr; ap.vLock = vu; this.registra('preavviso', this.nascosta ? { pren: p.id, app: ap.tipo, bg: 1 } : { pren: p.id, app: ap.tipo }); this.on('preavviso', p, ap); } }
+      if (ap.stato === 'attesa') { if (toGo(R, vu) <= (this.nascosta ? PRE_BG : PRE)) { if (ap.tipo === 'partenza') { const mot = this.guardiaNave(p); if (mot) { this.annullaDUfficio(p, mot); return; } } ap.stato = 'preavviso'; ap.preTr = this.tr; ap.vLock = vu; this.registra('preavviso', this.nascosta ? { pren: p.id, app: ap.tipo, bg: 1 } : { pren: p.id, app: ap.tipo }); this.on('preavviso', p, ap); } }
       if (ap.stato === 'preavviso' && R <= 0) { if (ap.premuto) this.esito(p, ap, 'riuscito'); else { ap.stato = 'ritardo'; ap.ritTr = this.tr; this.registra('ritardo_inizio', { pren: p.id, app: ap.tipo }); this.on('ritardo', p, ap); } }
       else if (ap.stato === 'ritardo' && this.tr - ap.ritTr >= RIT) this.esito(p, ap, 'mancato');
     }
@@ -485,35 +585,44 @@
     esitoFinale(p, ap, e, pen, ritardoSec) {
       this.penale(pen, (ap.tipo === 'partenza' ? 'Penale: ' : 'Penale: ') + (e === 'mancato' ? (ap.tipo === 'partenza' ? 'partenza mancata' : 'arrivo mancato') : 'ritardo alla conferma di presenza')); ap.pen = pen || 0;
       if (ap.tipo === 'partenza') { p.stato = (e === 'mancato') ? 'mancata' : 'in volo'; if (e === 'mancato') this.rilascia(p); else this.parte(p); }
-      else { p.stato = (e === 'mancato') ? 'in orbita' : 'conclusa'; if (p.stato === 'conclusa') this.consegna(p); }
+      else { p.stato = (e === 'mancato') ? 'in orbita' : 'conclusa'; if (p.stato === 'conclusa') { this.riep.viaggi++; const n = this.navi[p.nave]; if (n) { p.propArrivo = n.carb; this.registra('arrivo', { pren: p.id, nave: p.nave, prop: +n.carb.toFixed(1), cap: n.cap }); } this.consegna(p); } }
       this.rampaTr = this.tr;                                                        // dopo l'appuntamento il tempo torna alla velocita' scelta prima (vel non e' toccata)
       this.registra('esito', { pren: p.id, app: ap.tipo, esito: e, ritardo: ritardoSec || 0, penale: pen || 0 }); this.on('esito', p, ap, e, pen, ritardoSec);
     }
     // ---------------------------------------------------------------- prenotazioni
     prenota(piano, naveId, info) {
       if (this.attivi().length >= MAXPREN) return { ok: false, motivo: 'Hai già ' + MAXPREN + ' viaggi prenotati.' };
-      if (this.naveImpegnata(naveId)) return { ok: false, motivo: 'Questa nave è già impegnata.' };
       if (piano.tDep < this.t + ALONE_D) return { ok: false, motivo: 'Finestra troppo vicina: servono almeno 5 ore di preparazione.' };
       const cost = (info && info.costoProp) || 0, caric = (info && info.caricati) || [], oid = piano.orig.id || piano.orig, did = piano.dest.id || piano.dest; let tonn = 0;
-      for (const cid of caric) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false, motivo: 'Un contratto scelto non è più disponibile per il carico.' }; if (f.c.orig !== oid || f.c.dest !== did) return { ok: false, motivo: 'Un contratto scelto è su un\'altra rotta.' }; tonn += f.c.carico; }
+      for (const cid of caric) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false, motivo: 'Un contratto scelto non è più disponibile per il carico.' }; if (f.c.orig !== oid) return { ok: false, motivo: 'Un contratto scelto parte da un altro porto.' }; tonn += f.c.carico; }
+      const aboard = this.firmati.filter(f => f.stato === 'a bordo' && f.nave === naveId);                   // carico gia' sulla nave da una tappa precedente: viaggia con lei
+      if (aboard.length) { const nv = this.navi[naveId], dove = nv && nv.porto; if (dove && dove !== oid) return { ok: false, motivo: 'La nave ha ' + aboard.reduce((a, f) => a + f.c.carico, 0) + ' t di carico a bordo e si trova a ' + dove + ': il viaggio deve partire da lì.' }; tonn += aboard.reduce((a, f) => a + f.c.carico, 0); }
+      tonn += this.propriaPeso(naveId);
       if (info && info.caricoNave !== undefined && tonn > info.caricoNave) return { ok: false, motivo: 'Il carico (' + tonn + ' t) supera quello della nave (' + info.caricoNave + ' t).' };
-      if (this.saldo - this.impegnato() < cost) return { ok: false, motivo: 'Saldo insufficiente per il propellente (' + Math.round(cost) + ' cr): chiedi un prestito.' };
+      if (this.navi[naveId] && this.navi[naveId].persa) return { ok: false, motivo: 'Questa nave è andata perduta.' };
+      { const ps = this.postoNave(naveId);                                                                // catena: il viaggio parte dal porto dove la nave sara' dopo i viaggi gia' prenotati, e dopo il loro arrivo
+        if (ps.inOrbita) return { ok: false, motivo: 'La nave attende l\'attracco: completa prima la missione.' };
+        if (ps.porto && ps.porto !== oid) return { ok: false, motivo: 'La nave ' + naveId + (ps.coda.length ? ' sarà a ' : ' si trova a ') + ps.porto + (ps.coda.length ? ' dopo i viaggi già prenotati' : '') + ': può partire solo da lì.' };
+        if (piano.tDep < ps.da) return { ok: false, motivo: 'La nave arriva a ' + ps.porto + ' più tardi: la partenza deve essere dopo l\'arrivo previsto (più 5 ore).' }; }
       const id = this.nuovoId++;
       const mk = (tipo, tEv) => ({ tipo, tEv, stato: 'attesa', premuto: false, reazione: null, preTr: null, ritTr: null, vLock: 1, pen: 0 });
       const p = Object.assign({ id, nave: naveId, orig: piano.orig.id || piano.orig, dest: piano.dest.id || piano.dest, tDep: piano.tDep, tof: piano.tof, dv: piano.dv, r1: piano.r1, v1: piano.v1, creata: this.t, creataTr: this.tr, stato: 'prenotata', dep: mk('partenza', piano.tDep), arr: mk('arrivo', piano.tDep + piano.tof) }, info || {});
-      p.capacita = info && info.caricoNave !== undefined ? info.caricoNave : Infinity; p.costoProp = cost; p.pagato = false; p.carichi = caric.map(cid => { const f = this.firmati.find(x => x.id === cid); f.stato = 'caricato'; f.pren = id; return { cid, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce }; });
+      p.capacita = info && info.caricoNave !== undefined ? info.caricoNave : Infinity; p.propNec = info && info.propNec !== undefined ? info.propNec : undefined; p.pagato = false; p.carichi = aboard.map(f => { f.stato = 'caricato'; f.pren = id; return { cid: f.id, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce, orig: f.c.orig, dest: f.c.dest, eredita: true }; })
+        .concat(caric.map(cid => { const f = this.firmati.find(x => x.id === cid); f.stato = 'caricato'; f.pren = id; return { cid, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce, orig: f.c.orig, dest: f.c.dest }; }));
       this.pren.push(p); this.stat.prenotazioni++; this.registra('prenota', { pren: id, nave: naveId, orig: p.orig, dest: p.dest, anticipo: +(p.tDep - this.t).toFixed(2), tof: Math.round(p.tof), scelta: (info && info.scelta) || '' });
       return { ok: true, pren: p };
     }
     annulla(id) {
       const p = this.pren.find(x => x.id === id); if (!p || p.stato !== 'prenotata' || p.dep.stato !== 'attesa') return { ok: false };
-      if ((p.carichi || []).length) return { ok: false, motivo: 'Con il carico a bordo il viaggio non si annulla.' };
+      if ((p.carichi || []).some(k => !k.eredita)) return { ok: false, motivo: 'Con il carico a bordo il viaggio non si annulla.' };
+      if (this.pren.some(q => q !== p && q.nave === p.nave && q.stato === 'prenotata' && q.orig === p.dest && q.tDep >= p.tDep + p.tof)) return { ok: false, motivo: 'Annulla prima il viaggio successivo della stessa nave.' };
       const f = Math.max(0, Math.min(1, (this.t - p.creata) / Math.max(1e-6, p.tDep - p.creata)));
       const pen = f < 0.5 ? 0 : Math.round(f * PENALI.annullaMax / 10) * 10; this.penale(pen, 'Penale: prenotazione annullata'); p.stato = 'annullata'; this.rilascia(p); this.stat.annullamenti++;
       this.registra('annulla', { pren: id, frazione: +f.toFixed(2), penale: pen }); return { ok: true, penale: pen };
     }
     // ---------------------------------------------------------------- assenza (uscita, stallo del browser, standby): da qui in poi tempo reale 1:1
     assenza(dtReal) {
+      if (!this.avviato || this.fine || this.gameOver) return [];                                       // prima dell'avvio e dopo il traguardo il tempo e' fermo
       const riepilogo = []; this.t += dtReal / DAY; this.tr += dtReal; this.vel = 1; this.forzato = false; this.aggiornaEconomia();
       const b = bucketVel(1); this.stat.velSec[b] = (this.stat.velSec[b] || 0) + dtReal;
       for (const p of this.pren) {
@@ -525,55 +634,155 @@
       }
       this.registra('assenza', { secondi: Math.round(dtReal), mancati: riepilogo.length }); if (riepilogo.length) this.on('assenza', riepilogo, dtReal); return riepilogo;
     }
-    // ---------------------------------------------------------------- contratti, saldo, prestiti
+    // ---------------------------------------------------------------- contratti, magazzino, saldo, prestiti
     iniziaContratti(porti, perPorto) { for (const po of porti) for (let k = 0; k < perPorto; k++) this.offerte[po + '|' + k] = { porto: po, k, n: 0, tFrom: this.t, c: null }; }
     offerta(sl) { if (!sl.c && this.generaContratto) sl.c = this.generaContratto(sl.porto, sl.k, sl.n, sl.tFrom); return sl.c; }
     disponibili(porto) { const o = []; for (const key in this.offerte) { const sl = this.offerte[key]; if (porto && sl.porto !== porto) continue; const c = this.offerta(sl); if (c && this.t <= sl.tFrom + c.valida) o.push({ slot: key, c }); } return o; }
     rinnova(sl) { sl.n++; sl.tFrom = this.t; sl.c = null; }                       // il posto si riempie subito con il contratto successivo
-    aperti() { return this.firmati.filter(f => f.stato === 'firmato' || f.stato === 'caricato' || f.stato === 'in viaggio'); }
+    // stati: firmato -> (assegnato) -> caricato -> in viaggio -> consegnato | a bordo (tappa) | a deriva (nave persa) | scaduto | annullato
+    aperti() { return this.firmati.filter(f => ['firmato', 'assegnato', 'caricato', 'in viaggio', 'a bordo', 'a deriva'].includes(f.stato)); }
+    durataContratto(f) { return durataC(f); }
     firma(slot) {
       const sl = this.offerte[slot], c = sl && this.offerta(sl); if (!c || this.t > sl.tFrom + c.valida) return { ok: false, motivo: 'Il contratto non è più disponibile.' };
       if (this.aperti().length >= MAX_FIRMATI) return { ok: false, motivo: 'Hai già ' + MAX_FIRMATI + ' contratti aperti: consegnane o annullane uno.' };
-      this.firmati.push({ id: c.id, c, stato: 'firmato', pren: null, firmaT: this.t }); this.rinnova(sl);
+      this.firmati.push({ id: c.id, c, stato: 'firmato', pren: null, firmaT: this.t }); this.riep.firmati++; this.rinnova(sl);
       this.registra('firma', { cid: c.id, orig: c.orig, dest: c.dest, carico: c.carico, pay: c.pay, scad: Math.round(c.scad - this.t), saldo: Math.round(this.saldo) }); return { ok: true, c };
     }
-    annullaContratto(cid) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false }; const pen = Math.round(f.c.pay * PENALE_ANNULLO / 10) * 10; this.penale(pen, 'Penale: contratto ' + cid + ' annullato'); f.stato = 'annullato'; this.registra('contratto_annullato', { cid, penale: pen }); return { ok: true, penale: pen }; }
-    // Operazione di carico: lega in modo definitivo uno o piu' contratti firmati (stessa rotta, entro la capacita') a un viaggio prenotato, prima della partenza.
+    // Annullare prima della partenza: nessun compenso e penale del 10% del valore (anche se gia' caricato, purche' il viaggio non sia partito).
+    annullaContratto(cid) {
+      const f = this.firmati.find(x => x.id === cid); if (!f || !['firmato', 'assegnato', 'caricato'].includes(f.stato)) return { ok: false, motivo: 'Il contratto non si può più annullare: il carico è già partito.' };
+      if (f.stato === 'caricato') { const p = this.pren.find(x => x.id === f.pren); if (!p || p.stato !== 'prenotata') return { ok: false, motivo: 'Il viaggio è già partito.' }; const k = (p.carichi || []).find(q => q.cid === cid); if (k && k.eredita) return { ok: false, motivo: 'Il carico è già a bordo da una tappa precedente.' }; p.carichi = (p.carichi || []).filter(q => q.cid !== cid); }
+      const pen = Math.round(f.c.pay * PENALE_ANNULLO / 10) * 10; this.penale(pen, 'Penale: contratto ' + cid + ' annullato'); f.stato = 'annullato'; f.pren = null; this.riep.annullati++; this.registra('contratto_annullato', { cid, penale: pen }); return { ok: true, penale: pen };
+    }
+    // Operazione di carico: lega in modo definitivo uno o piu' contratti firmati (o assegnati a questo viaggio) a un viaggio prenotato, prima della partenza.
     caricoUsato(p) { return (p.carichi || []).reduce((a, k) => a + k.carico, 0); }
+    propriaPeso(naveId) { const n = this.navi[naveId]; return n && n.propria ? n.propria.reduce((a, x) => a + x.t, 0) : 0; }
+    assegnatiPeso(p, esclusi) { return this.firmati.filter(f => f.stato === 'assegnato' && f.pren === p.id && !(esclusi || []).includes(f.id)).reduce((a, f) => a + f.c.carico, 0); }
+    pesoStiva(p) { return this.caricoUsato(p) + this.propriaPeso(p.nave); }
+    assegna(cid, prenId) {
+      const f = this.firmati.find(x => x.id === cid), p = this.pren.find(x => x.id === prenId); if (!f || f.stato !== 'firmato') return { ok: false, motivo: 'Il contratto non è disponibile.' };
+      if (!p || p.stato !== 'prenotata') return { ok: false, motivo: 'Il viaggio non è più prenotato.' }; if (f.c.orig !== p.orig) return { ok: false, motivo: 'Il contratto parte da un altro porto (' + f.c.orig + ').' };
+      if (this.pesoStiva(p) + this.assegnatiPeso(p) + f.c.carico > (p.capacita === undefined ? Infinity : p.capacita)) return { ok: false, motivo: 'Non c\'è posto: la stiva della nave è piena.' };
+      f.stato = 'assegnato'; f.pren = p.id; this.registra('assegna', { pren: p.id, cid, ton: f.c.carico }); return { ok: true };
+    }
+    disassegna(cid) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'assegnato') return { ok: false }; f.stato = 'firmato'; f.pren = null; return { ok: true }; }
     carica(prenId, cids) {
       const p = this.pren.find(x => x.id === prenId); if (!p || p.stato !== 'prenotata') return { ok: false, motivo: 'Si può caricare solo un viaggio prenotato e non ancora partito.' };
-      let tonn = this.caricoUsato(p); const fs = [];
-      for (const cid of cids) { const f = this.firmati.find(x => x.id === cid); if (!f || f.stato !== 'firmato') return { ok: false, motivo: 'Un contratto non è più disponibile per il carico.' };
-        if (f.c.orig !== p.orig || f.c.dest !== p.dest) return { ok: false, motivo: 'Un contratto è su un\'altra rotta.' }; tonn += f.c.carico; fs.push(f); }
+      let tonn = this.pesoStiva(p); const fs = [];
+      for (const cid of cids) { const f = this.firmati.find(x => x.id === cid); if (!f || !(f.stato === 'firmato' || (f.stato === 'assegnato' && f.pren === p.id))) return { ok: false, motivo: 'Un contratto non è più disponibile per il carico.' };
+        if (f.c.orig !== p.orig) return { ok: false, motivo: 'Un contratto parte da un altro porto (' + f.c.orig + '): il viaggio parte da ' + p.orig + '.' }; tonn += f.c.carico; fs.push(f); }
+      tonn += this.assegnatiPeso(p, cids);
       if (tonn > (p.capacita === undefined ? Infinity : p.capacita)) return { ok: false, motivo: 'Il carico (' + tonn + ' t) supera quello della nave (' + p.capacita + ' t).' };
-      p.carichi = p.carichi || [];
-      for (const f of fs) { f.stato = 'caricato'; f.pren = p.id; p.carichi.push({ cid: f.id, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce });
-        this.registra('carica', { pren: p.id, cid: f.id, ton: f.c.carico, tot: tonn, capacita: p.capacita === Infinity ? 0 : p.capacita, margine: Math.round(f.c.scad - (p.tDep + p.tof)) }); }
-      return { ok: true, tot: tonn };
+      p.carichi = p.carichi || []; const tot = tonn - this.assegnatiPeso(p, cids);
+      for (const f of fs) { f.stato = 'caricato'; f.pren = p.id; p.carichi.push({ cid: f.id, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce, mat: f.c.mat, orig: f.c.orig, dest: f.c.dest });
+        this.registra('carica', { pren: p.id, cid: f.id, ton: f.c.carico, tot, capacita: p.capacita === Infinity ? 0 : p.capacita, margine: Math.round(f.c.scad - (p.tDep + p.tof)) }); }
+      return { ok: true, tot };
     }
-    rilascia(p) { for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f && f.pren === p.id && f.stato !== 'consegnato') { f.stato = 'firmato'; f.pren = null; } } }
-    parte(p) { if (!p.pagato) { p.pagato = true; if (p.costoProp) this.muovi(-p.costoProp, 'Propellente (' + p.nave + ': ' + p.orig + ' → ' + p.dest + ')'); } for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f) f.stato = 'in viaggio'; } }
+    rilascia(p) {
+      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f && f.pren === p.id && f.stato !== 'consegnato') { f.stato = k.eredita ? 'a bordo' : 'firmato'; f.pren = null; } }
+      for (const f of this.firmati) if (f.stato === 'assegnato' && f.pren === p.id) { f.stato = 'firmato'; f.pren = null; }
+    }
+    parte(p) {
+      const n = this.navi[p.nave];
+      if (!p.pagato) { p.pagato = true; if (n && p.propNec !== undefined) {                          // il propellente e' nel serbatoio della nave: parte quello che c'e'
+        if (n.carb + 1e-9 >= p.propNec) { n.carb = Math.max(0, n.carb - p.propNec); p.propResiduo = n.carb; }
+        else { const f = p.propNec > 0 ? n.carb / p.propNec : 0; p.persaT = this.t + f * p.tof; p.propResiduo = 0; this.registra('carburante_insufficiente', { pren: p.id, nave: p.nave, serve: +p.propNec.toFixed(1), ha: +n.carb.toFixed(1), perso_fra: Math.round(f * p.tof) }); n.carb = 0; } } }
+      for (const f of this.firmati.filter(x => x.stato === 'assegnato' && x.pren === p.id)) {          // assegnato ma non caricato e il razzo parte: annullamento istantaneo
+        const pen = Math.round(f.c.pay * PENALE_ANNULLO / 10) * 10; this.penale(pen, 'Penale: contratto ' + f.id + ' non caricato alla partenza'); f.stato = 'annullato'; f.pren = null; this.registra('annullato_partenza', { pren: p.id, cid: f.id, penale: pen }); }
+      for (const f of this.firmati.filter(x => x.stato === 'a bordo' && x.nave === p.nave)) { p.carichi = p.carichi || []; if (!p.carichi.some(k => k.cid === f.id)) { p.carichi.push({ cid: f.id, pay: f.c.pay, carico: f.c.carico, scad: f.c.scad, merce: f.c.merce, mat: f.c.mat, orig: f.c.orig, dest: f.c.dest, eredita: true }); f.stato = 'caricato'; f.pren = p.id; } }       // il carico in transito partito con una tappa precedente prosegue con la nave
+      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f && f.stato === 'caricato') f.stato = 'in viaggio'; }
+    }
+    // Nave persa: il razzo resta nello spazio con il suo carico (recuperabile in futuro); i contratti a bordo restano aperti "a deriva" e seguono i tempi normali.
+    perdi(p) {
+      this.riep.perse++; p.stato = 'persa'; if (p.arr) p.arr.stato = 'perso'; const n = this.navi[p.nave]; if (n) { n.persa = true; n.carb = 0; }
+      const carichi = []; for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (f && f.stato !== 'scaduto') { f.stato = 'a deriva'; f.nave = p.nave; } carichi.push({ cid: k.cid, mat: k.mat, merce: k.merce, carico: k.carico, scaduto: !!(f && f.stato === 'scaduto') || !!k.scaduto }); }
+      this.relitti.push({ id: this.relitti.length + 1, nave: p.nave, pren: p.id, t: this.t, orig: p.orig, dest: p.dest, tDep: p.tDep, tof: p.tof, frazione: p.persaT !== undefined && p.tof ? (p.persaT - p.tDep) / p.tof : null, carichi, propria: n && n.propria ? n.propria.slice() : [], recuperato: false, tPersa: p.persaT !== undefined ? p.persaT : this.t, stato: (this.propaga && p.r1 && p.persaT !== undefined) ? this.propaga(p.r1, p.v1, (p.persaT - p.tDep) * DAY) : null });
+      if (n) n.propria = [];
+      this.registra('persa', { pren: p.id, nave: p.nave, contratti: carichi.length, ton: carichi.reduce((a, x) => a + x.carico, 0) }); this.on('persa', p, 0);
+    }
+    iniziaFlotta(lista) { for (const n of lista) this.navi[n.id] = { cap: n.cap, carb: n.cap, persa: false, propria: [], porto: n.porto || null }; }       // porto: dove si trova la nave; parte solo da li'
+    rifornisci(id, t, prezzo) {
+      const n = this.navi[id]; if (!n || n.persa) return { ok: false, motivo: 'Nave non disponibile.' };
+      if (n.porto && this.tipoPorto && this.tipoPorto(n.porto) === 'scientifico') return { ok: false, motivo: 'Le stazioni scientifiche non forniscono carburante: serve un trasferimento da un\'altra nave.' }; const q = Math.max(0, Math.min(t, n.cap - n.carb)); if (q <= 0) return { ok: false, motivo: 'Il serbatoio è già pieno.' };
+      const costo = q * prezzo; if (this.saldo < costo) return { ok: false, motivo: 'Saldo insufficiente per ' + q.toFixed(1) + ' t di propellente: chiedi un prestito.' };
+      n.carb += q; this.riep.carburante += costo; this.muovi(-costo, 'Rifornimento ' + id + ' (' + q.toFixed(1) + ' t)'); this.registra('rifornimento', { nave: id, t: +q.toFixed(1), costo: Math.round(costo), carb: +n.carb.toFixed(1), saldo: Math.round(this.saldo) }); return { ok: true, t: q, costo };
+    }
+    // ---- magazzino (stock) di porto: la merce del giocatore, per tipo di materiale
+    stockUsato(porto) { const s = this.stock[porto]; return s ? Object.values(s).reduce((a, x) => a + x.t, 0) : 0; }
+    stockTotale() { return Object.keys(this.stock).reduce((a, po) => a + this.stockUsato(po), 0); }
+    deposita(porto, mat, merce, t) { if (this.tipoPorto && this.tipoPorto(porto) === 'scientifico') return 0; const libero = Math.max(0, STOCK_CAP - this.stockUsato(porto)), q = Math.min(t, libero); if (q > 0) { const s = this.stock[porto] = this.stock[porto] || {}; s[mat] = s[mat] || { merce, t: 0 }; s[mat].t += q; } return q; }
+    scaricaMerce(porto, naveId, k, motivo) {                                      // merce del giocatore (contratto scaduto): nello stock del porto, l'eccedenza resta a bordo
+      const dep = this.deposita(porto, k.mat || k.merce, k.merce, k.carico), resto = +(k.carico - dep).toFixed(3), n = this.navi[naveId];
+      if (resto > 0 && n) { n.propria = n.propria || []; n.propria.push({ mat: k.mat || k.merce, merce: k.merce, t: resto }); }
+      this.registra('merce_propria', { porto, nave: naveId, merce: k.merce, stoccata: +dep.toFixed(2), a_bordo: resto, motivo }); return dep;
+    }
+    scaricaPropria(naveId, porto) { const n = this.navi[naveId]; if (!n || !n.propria || !n.propria.length) return; const resto = []; for (const x of n.propria) { const dep = this.deposita(porto, x.mat, x.merce, x.t); if (x.t - dep > 1e-9) resto.push({ mat: x.mat, merce: x.merce, t: +(x.t - dep).toFixed(3) }); if (dep > 0) this.registra('merce_propria', { porto, nave: naveId, merce: x.merce, stoccata: +dep.toFixed(2), a_bordo: +(x.t - dep).toFixed(3), motivo: 'scarico' }); } n.propria = resto; }
     consegna(p) {
-      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (!f) continue; const r = compensoDi(k.pay, this.t, k.scad); if (r.importo) this.muovi(r.importo, 'Compenso ' + k.cid + (r.ritardo ? ' (' + r.ritardo + ' g di ritardo)' : '')); f.stato = 'consegnato'; f.incasso = r.importo;
-        this.registra('incasso', { pren: p.id, contratto: k.cid, compenso: r.importo, pieno: k.pay, ritardo: r.ritardo, saldo: Math.round(this.saldo) }); }
+      const n = this.navi[p.nave]; if (n) n.porto = p.dest;
+      for (const k of p.carichi || []) { const f = this.firmati.find(x => x.id === k.cid); if (!f) continue;
+        if (f.stato === 'scaduto' || k.scaduto) { this.scaricaMerce(p.dest, p.nave, k, 'contratto scaduto'); continue; }            // contratto scaduto in viaggio: la merce e' del giocatore
+        if (k.dest !== undefined && k.dest !== p.dest) { f.stato = 'a bordo'; f.nave = p.nave; f.pren = null; this.registra('tappa', { pren: p.id, nave: p.nave, contratto: k.cid, porto: p.dest, dest: k.dest }); continue; }       // tappa intermedia: il carico resta a bordo
+        const r = compensoDi(k.pay, this.t, k.scad, durataC(f)); if (r.importo) this.muovi(r.importo, 'Compenso ' + k.cid + (r.ritardo ? ' (' + r.ritardo + ' g di ritardo)' : '')); if (r.penale) this.penale(r.penale, 'Penale: consegna molto in ritardo ' + k.cid); f.stato = 'consegnato'; f.incasso = r.importo - r.penale; this.riep.consegne++; this.riep.compensi += r.importo; this.riep.ton += k.carico;
+        this.registra('incasso', { pren: p.id, contratto: k.cid, compenso: r.importo, pieno: k.pay, ritardo: r.ritardo, saldo: Math.round(this.saldo), penale: r.penale }); }
+      this.scaricaPropria(p.nave, p.dest);
     }
-    impegnato() { return this.pren.filter(p => p.stato === 'prenotata').reduce((a, p) => a + (p.costoProp || 0), 0); }      // propellente delle prenotazioni non ancora partite
+    // contratto scaduto (2 volte la durata dopo la data): penale piena; la merce, se e' gia' sulla nave, diventa del giocatore
+    scadi(f) {
+      const pen = Math.round(f.c.pay / 10) * 10, st = f.stato; this.penale(pen, 'Penale: contratto ' + f.id + ' scaduto (merce non consegnata)'); 
+      const p = f.pren && this.pren.find(x => x.id === f.pren), k0 = { cid: f.id, mat: f.c.mat || f.c.merce, merce: f.c.merce, carico: f.c.carico };
+      if (st === 'caricato' && p) { p.carichi = (p.carichi || []).filter(q => q.cid !== f.id); this.scaricaMerce(p.orig, p.nave, k0, 'contratto scaduto'); }
+      else if (st === 'a bordo' && f.nave) { const nv = this.navi[f.nave]; this.scaricaMerce((nv && nv.porto) || f.c.dest, f.nave, k0, 'contratto scaduto'); }
+      else if (st === 'in viaggio' && p) { const k = (p.carichi || []).find(q => q.cid === f.id); if (k) k.scaduto = true; }
+      else if (st === 'a deriva') { for (const rl of this.relitti) for (const k of rl.carichi) if (k.cid === f.id) k.scaduto = true; }
+      this.riep.scaduti++; f.stato = 'scaduto'; f.pren = st === 'in viaggio' ? f.pren : null; this.registra('contratto_scaduto', { cid: f.id, penale: pen, era: st });
+    }
     aggiornaEconomia() {
+      this.controllaObiettivo(); this.controllaGameOver();
+      for (const p of this.pren) if (p.stato === 'in volo' && p.persaT !== undefined && this.t >= p.persaT) this.perdi(p);
       for (const key in this.offerte) { const sl = this.offerte[key], c = this.offerta(sl); if (c && this.t > sl.tFrom + c.valida) this.rinnova(sl); }
-      for (const f of this.firmati) if (f.stato === 'firmato' && this.t > f.c.scad + GRAZIA) { const pen = Math.round(f.c.pay * PENALE_DECADUTO / 10) * 10; this.penale(pen, 'Penale: contratto ' + f.id + ' decaduto'); f.stato = 'scaduto'; this.registra('contratto_scaduto', { cid: f.id, penale: pen }); }
-      while (this.t >= this.prossimoInt) { const i = Math.round(this.debito * TASSO); this.prossimoInt += GIORNI_INT; if (i > 0) { this.muovi(-i, 'Interessi sul debito'); this.registra('interessi', { importo: i, debito: this.debito, saldo: Math.round(this.saldo) }); } }
+      for (const f of this.aperti()) if (this.t >= f.c.scad + durataC(f)) this.scadi(f);
+      if (!isFinite(this.t) || !isFinite(this.prossimoInt)) return; let guardia = 0;
+      while (this.t >= this.prossimoInt) { if (++guardia > 1500) { this.prossimoInt = this.t + GIORNI_INT; break; } const i = Math.round(this.debito * TASSO); this.prossimoInt += GIORNI_INT; if (i > 0) { this.riep.interessi += i; this.muovi(-i, 'Interessi sul debito'); this.registra('interessi', { importo: i, debito: this.debito, saldo: Math.round(this.saldo) }); }
+        const ton = this.stockTotale(); if (ton > 0) { const a = Math.round(ton * STOCK_AFFITTO * GIORNI_INT); this.riep.affitto += a; this.muovi(-a, 'Affitto stock (' + f1t(ton) + ' t)'); this.registra('affitto_stock', { ton: +ton.toFixed(1), importo: a, saldo: Math.round(this.saldo) }); } }
     }
-    prestito() { if (this.debito + PREST > MAX_DEBITO) return false; this.debito += PREST; this.muovi(PREST, 'Prestito ricevuto'); this.registra('prestito', { importo: PREST, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
+    prestito() { if (this.prestiti >= MAX_PRESTITI) return false; if (this.debito <= 0) this.prossimoInt = this.t + GIORNI_INT; this.prestiti++; this.debito += PREST; this.muovi(PREST, 'Prestito ricevuto'); this.registra('prestito', { importo: PREST, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
     rimborsa() { const x = Math.min(PREST, this.debito); if (x <= 0 || this.saldo < x) return false; this.debito -= x; this.muovi(-x, 'Rimborso del debito'); this.registra('rimborso', { importo: x, debito: this.debito, saldo: Math.round(this.saldo) }); return true; }
+    // ---------------------------------------------------------------- partita: avvio e traguardo
+    avvia() { if (this.avviato && this.tr > 0) return; this.avviato = true; this.tAvvio = this.t; this.registra('avvio', {}); }
+    giorniDallAvvio() { const f = this.fine || this.gameOver; return Math.max(0, (f ? f.t : this.t) - this.tAvvio); }
+    // GAME OVER per debiti: prestiti esauriti, nessun viaggio in corso, e nessuna nave puo' partire (propellente insufficiente su ogni rotta e nessun modo di comprarne abbastanza).
+    puoMuoversi() {
+      for (const id in this.navi) { const n = this.navi[id]; if (n.persa) continue; if (!n.porto) return true;                      // posizione ignota (vecchi salvataggi): non si decide
+        const m = this.minPropNec ? this.minPropNec(id, n.porto) : 0; if (m === null) continue;                                    // nessuna rotta possibile da questo porto
+        if (n.carb + 1e-9 >= m) return true;
+        const scient = this.tipoPorto && this.tipoPorto(n.porto) === 'scientifico', prezzo = this.prezzoProp ? this.prezzoProp(id) : 0;
+        if (!scient && this.saldo >= (m - n.carb) * prezzo) return true; }
+      return false;
+    }
+    gameOverManuale() {                                                                   // il giocatore abbandona la partita (ad esempio se non capisce come andare avanti)
+      if (this.gameOver || this.fine || !this.avviato) return false;
+      this.gameOver = { t: this.t, giorni: +(this.t - this.tAvvio).toFixed(1), tReale: Math.round(this.tr), saldo: Math.round(this.saldo), debito: Math.round(this.debito), manuale: true, riep: JSON.parse(JSON.stringify(this.riep)) };
+      this.registra('game_over', { giorni: this.gameOver.giorni, saldo: this.gameOver.saldo, debito: this.gameOver.debito, viaggi: this.riep.viaggi, consegne: this.riep.consegne, perse: this.riep.perse, manuale: 1 }); this.on('gameover', this.gameOver); return true;
+    }
+    controllaGameOver() {
+      if (this.gameOver || this.fine || !this.avviato || this.attivi().length || this.prestiti < MAX_PRESTITI || this.puoMuoversi()) return;
+      this.gameOver = { t: this.t, giorni: +(this.t - this.tAvvio).toFixed(1), tReale: Math.round(this.tr), saldo: Math.round(this.saldo), debito: Math.round(this.debito), riep: JSON.parse(JSON.stringify(this.riep)) };
+      this.registra('game_over', { giorni: this.gameOver.giorni, saldo: this.gameOver.saldo, debito: this.gameOver.debito, viaggi: this.riep.viaggi, consegne: this.riep.consegne, perse: this.riep.perse }); this.on('gameover', this.gameOver);
+    }
+    controllaObiettivo() {                                                             // traguardo: almeno OBIETTIVO crediti e nessun debito
+      if (this.fine || !this.avviato || this.saldo < OBIETTIVO || this.debito > 0) return;
+      this.fine = { t: this.t, giorni: +(this.t - this.tAvvio).toFixed(1), tReale: Math.round(this.tr), saldo: Math.round(this.saldo), riep: JSON.parse(JSON.stringify(this.riep)) };
+      this.registra('fine', { giorni: this.fine.giorni, minuti: +(this.tr / 60).toFixed(1), viaggi: this.riep.viaggi, consegne: this.riep.consegne, compensi: Math.round(this.riep.compensi), penali: Math.round(this.riep.penali), perse: this.riep.perse, carburante: Math.round(this.riep.carburante) }); this.on('fine', this.fine);
+    }
     // ---------------------------------------------------------------- salvataggio
-    serializza(nowMs) { return JSON.parse(JSON.stringify({ v: 1, t: this.t, tr: this.tr, realMs: nowMs, vel: this.vel, pren: this.pren, log: this.log, seq: this.seq, nuovoId: this.nuovoId, penali: this.penali, stat: this.stat, saldo: this.saldo, movimenti: this.movimenti, debito: this.debito, prossimoInt: this.prossimoInt, offerte: this.offerte, firmati: this.firmati })); }
+    serializza(nowMs) { return JSON.parse(JSON.stringify({ v: 1, t: this.t, tr: this.tr, realMs: nowMs, vel: this.vel, pren: this.pren, log: this.log, seq: this.seq, nuovoId: this.nuovoId, penali: this.penali, stat: this.stat, saldo: this.saldo, navi: this.navi, stock: this.stock, relitti: this.relitti, avviato: this.avviato, tAvvio: this.tAvvio, fine: this.fine, gameOver: this.gameOver, prestiti: this.prestiti, riep: this.riep, movimenti: this.movimenti, debito: this.debito, prossimoInt: this.prossimoInt, offerte: this.offerte, firmati: this.firmati })); }
     ripristina(o, nowMs) {
-      this.t = o.t; this.tr = o.tr; this.pren = o.pren || []; this.log = o.log || []; this.seq = o.seq; this.nuovoId = o.nuovoId || 1; this.penali = o.penali || 0; this.stat = o.stat || this.stat; if (o.saldo !== undefined && o.debito !== undefined && o.offerte) { this.saldo = o.saldo; this.movimenti = o.movimenti || []; this.debito = o.debito; this.prossimoInt = o.prossimoInt; this.offerte = o.offerte || this.offerte; this.firmati = o.firmati || []; } this.vel = 1; this.forzato = false;
+      this.t = o.t; this.tr = o.tr; this.pren = o.pren || []; this.log = o.log || []; this.seq = o.seq; this.nuovoId = o.nuovoId || 1; this.penali = o.penali || 0; this.stat = o.stat || this.stat; if (o.saldo !== undefined && o.debito !== undefined && o.offerte) { this.saldo = o.saldo; if (o.navi) this.navi = o.navi; this.stock = o.stock || {}; this.relitti = o.relitti || []; this.avviato = o.avviato !== undefined ? o.avviato : true; this.tAvvio = o.tAvvio !== undefined ? o.tAvvio : this.tAvvio; this.fine = o.fine || null; this.gameOver = o.gameOver || null; this.prestiti = o.prestiti !== undefined ? o.prestiti : Math.max(0, Math.ceil(((o.debito || 0) - SALDO0) / PREST)); if (o.riep) this.riep = Object.assign(this.riep, o.riep); this.movimenti = o.movimenti || []; this.debito = o.debito; this.prossimoInt = o.prossimoInt; this.offerte = o.offerte || this.offerte; this.firmati = o.firmati || []; } if (o.navi && !(o.saldo !== undefined && o.debito !== undefined && o.offerte)) this.navi = o.navi; this.vel = 1; this.forzato = false;
       const trascorso = Math.max(0, (nowMs - o.realMs) / 1000);              // REGOLA: da "ultimo visto" in poi si va a 1:1, qualunque fosse la velocita'
       return trascorso > 0 ? this.assenza(trascorso) : [];
     }
   }
-  const API = { SALDO0, TASSO, GIORNI_INT, PREST, MAX_DEBITO, RITARDO_AL_GIORNO, GRAZIA, PENALE_DECADUTO, PENALE_ANNULLO, MAX_FIRMATI, compensoDi, DAY, PRE, PRE_BG, RAMPA, RIT, CONTO, K, STALLO, ALONE_D, MAXPREN, VMAX, PRESET, PENALI, vLegge, toGo, velDaSlider, sliderDaVel, bucketVel, Mondo };
+  const API = { MAX_PRESTITI, OBIETTIVO, STOCK_CAP, STOCK_AFFITTO, DURATA_MIN, SALDO0, TASSO, GIORNI_INT, PREST, PENALE_ANNULLO, MAX_FIRMATI, compensoDi, DAY, PRE, PRE_BG, RAMPA, RIT, CONTO, K, STALLO, ALONE_D, MAXPREN, VMAX, PRESET, PENALI, vLegge, toGo, velDaSlider, sliderDaVel, bucketVel, Mondo };
   if (typeof module !== 'undefined') module.exports = API; else root.Tempo = API;
 })(this);
 
@@ -582,15 +791,64 @@
 const O = Orbite, DAY = O.DAY, AU = O.AU, cv = document.getElementById('map'), ctx = cv.getContext('2d');
 const pk = document.getElementById('pork'), pctx = pk.getContext('2d');
 const $ = id => document.getElementById(id);
+// ---- KIT DELL'INTERFACCIA (vedi il commento in alto): tendine, conferme e suggerimenti propri del gioco
+const csels = [];
+const cpop = document.createElement('div'); cpop.id = 'cpop'; cpop.hidden = true; document.body.appendChild(cpop); let cpopDi = null, cpopIdx = -1;
+function chiudiCpop() { cpop.hidden = true; if (cpopDi) cpopDi.b.classList.remove('aperta'); cpopDi = null; }
+function daSelect(sel) {
+  const auto = sel.style.width === 'auto', w = document.createElement('div'); w.className = 'csel' + (auto ? ' auto' : '');
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'csel-b'; b.innerHTML = '<span class="csel-t"></span><span class="csel-a">▾</span>'; w.appendChild(b);
+  sel.after(w); sel.classList.add('nativa'); const o = { sel, b, t: b.firstChild, sig: '' }; csels.push(o);
+  const items = () => { const l = []; for (const n of sel.children) { if (n.tagName === 'OPTGROUP') { l.push({ g: n.label }); for (const q of n.children) l.push({ o: q }); } else l.push({ o: n }); } return l; };
+  const apri = () => {
+    if (sel.disabled) return; if (cpopDi === o) { chiudiCpop(); return; } chiudiCpop(); cpopDi = o; b.classList.add('aperta'); cpop.innerHTML = '';
+    items().forEach(it => { const d = document.createElement('div'); if (it.g !== undefined) { d.className = 'cg'; d.textContent = it.g; } else { d.className = 'co' + (it.o.selected ? ' sel' : '') + (it.o.disabled ? ' dis' : ''); d.textContent = it.o.text; d.dataset.v = it.o.value; if (!it.o.disabled) d.onclick = () => { sel.value = it.o.value; sel.dispatchEvent(new Event('change', { bubbles: true })); chiudiCpop(); b.focus(); }; } cpop.appendChild(d); });
+    const r = b.getBoundingClientRect(); cpop.hidden = false; cpop.style.minWidth = r.width + 'px'; cpop.style.left = Math.max(4, Math.min(r.left, innerWidth - cpop.offsetWidth - 4)) + 'px';
+    const sotto = innerHeight - r.bottom - 8; cpop.style.top = (sotto >= Math.min(cpop.scrollHeight, 240) || r.top < sotto ? r.bottom + 2 : Math.max(4, r.top - cpop.offsetHeight - 2)) + 'px';
+    const s0 = cpop.querySelector('.sel'); if (s0) s0.scrollIntoView({ block: 'nearest' }); cpopIdx = -1;
+  };
+  b.onclick = apri; o.apri = apri; return o;
+}
+function sincCsel() { for (const o of csels) { const s = o.sel, op = s.options[s.selectedIndex], txt = op ? op.text : '', sig = txt + '|' + s.disabled; if (sig !== o.sig) { o.sig = sig; o.t.textContent = txt; o.b.disabled = s.disabled; } } }
+document.addEventListener('mousedown', e => { if (cpopDi && !cpop.contains(e.target) && !cpopDi.b.contains(e.target)) chiudiCpop(); });
+document.addEventListener('keydown', e => { if (!cpopDi) return; const l = [...cpop.querySelectorAll('.co:not(.dis)')]; if (e.key === 'Escape') { chiudiCpop(); e.preventDefault(); } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { cpopIdx = Math.max(0, Math.min(l.length - 1, (cpopIdx < 0 ? l.findIndex(x => x.classList.contains('sel')) : cpopIdx) + (e.key === 'ArrowDown' ? 1 : -1))); l.forEach((x, i) => x.classList.toggle('ev', i === cpopIdx)); if (l[cpopIdx]) l[cpopIdx].scrollIntoView({ block: 'nearest' }); e.preventDefault(); } else if (e.key === 'Enter' && cpopIdx >= 0 && l[cpopIdx]) { l[cpopIdx].click(); e.preventDefault(); } });
+addEventListener('resize', chiudiCpop); document.addEventListener('scroll', e => { if (cpopDi && !cpop.contains(e.target)) chiudiCpop(); }, true);
+// conferma e testo come finestre del gioco (mai quelle del browser)
+function finestra(titolo, corpo, bottoni) {
+  const m = document.createElement('div'); m.id = 'modale'; m.innerHTML = '<div class="mb"><div class="mt">' + titolo + '</div><div class="mc"></div><div class="mx"></div></div>'; const mc = m.querySelector('.mc'); if (typeof corpo === 'string') mc.innerHTML = corpo; else mc.appendChild(corpo);
+  const chiudi = () => { m.remove(); document.removeEventListener('keydown', tasti, true); }, tasti = e => { if (e.key === 'Escape') { e.stopPropagation(); chiudi(); } else if (e.key === 'Enter' && bottoni[0] && !(e.target && e.target.tagName === 'TEXTAREA')) { e.stopPropagation(); chiudi(); bottoni[0].fn && bottoni[0].fn(); } };
+  bottoni.forEach((bt, i) => { const x = document.createElement('button'); x.textContent = bt.t; if (i === 0) x.className = 'go'; if (bt.cls) x.className = bt.cls; x.style.width = 'auto'; x.style.marginTop = '0'; x.onclick = () => { chiudi(); bt.fn && bt.fn(); }; m.querySelector('.mx').appendChild(x); });
+  m.addEventListener('mousedown', e => { if (e.target === m) chiudi(); }); document.body.appendChild(m); document.addEventListener('keydown', tasti, true); const primo = m.querySelector('.mx button'); if (primo) primo.focus(); return chiudi;
+}
+function conferma(testo, ok, etOk = 'Procedi') { finestra('CONFERMA', testo, [{ t: etOk, fn: ok }, { t: 'Annulla' }]); }
+function mostraTesto(titolo, testo) { const ta = document.createElement('textarea'); ta.value = testo; ta.readOnly = true; finestra(titolo, ta, [{ t: 'Chiudi' }]); ta.focus(); ta.select(); }
+// suggerimenti: gli attributi title diventano riquadri del gioco
+{ const tip = document.createElement('div'); tip.id = 'tip'; tip.hidden = true; document.body.appendChild(tip);
+  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('[title],[data-tip]'); if (!el) { tip.hidden = true; return; } if (el.hasAttribute('title')) { el.dataset.tip = el.getAttribute('title'); el.removeAttribute('title'); }
+    tip.textContent = el.dataset.tip; tip.hidden = false; const r = el.getBoundingClientRect(); tip.style.left = Math.max(4, Math.min(r.left, innerWidth - tip.offsetWidth - 4)) + 'px'; tip.style.top = (r.bottom + 6 + tip.offsetHeight > innerHeight ? r.top - tip.offsetHeight - 6 : r.bottom + 6) + 'px'; });
+  document.addEventListener('mouseout', e => { if (!e.relatedTarget || !(e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]'))) tip.hidden = true; }); }
 const ROCCE = ['vesta', 'cerere', 'igea', 'pallade'];
+// Porti di un corpo, a parole (vedi docs/enciclopedia/porti.md): sul pianeta, sui satelliti, in orbita, stazione sulle rocce della fascia
+function etichettaPorti(id) {
+  const info = O.PORTI_INFO; if (ROCCE.includes(id) && info[id]) return '  (' + O.etichettaPorto(id) + ')';
+  const pe = O.portiDi(id); if (!pe.length) return '';
+  const nomi = pe.map(e => O.etichettaPorto(e.id) + (e.corpo !== id && !e.orbitante ? ' · su satellite' : ''));
+  return '  (' + nomi.join(' + ') + ')';
+}
+// Simbolo di porto, uguale per tutti: piccola stazione (rombo con due pannelli). Verde = commerciale, ambra = scientifico. Cavo = il porto non e' sul corpo (satellite o stazione in orbita).
+function iconaPorto(cx, cy, tipo, cavo) {
+  const col = tipo === 'scientifico' ? '#ffb347' : '#6bff9a'; ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1; ctx.setLineDash(cavo ? [2, 2] : []);
+  ctx.beginPath(); ctx.moveTo(cx, cy - 3.5); ctx.lineTo(cx + 3.5, cy); ctx.lineTo(cx, cy + 3.5); ctx.lineTo(cx - 3.5, cy); ctx.closePath(); if (cavo) ctx.stroke(); else ctx.fill();
+  ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(cx - 8, cy); ctx.lineTo(cx - 4.5, cy); ctx.moveTo(cx + 4.5, cy); ctx.lineTo(cx + 8, cy); ctx.stroke();
+}
 const RC = { vesta: '#1f9bbb', cerere: '#a98a14', igea: '#4fa84a', pallade: '#8d62d4' };       // colore di ogni roccia della fascia
 const dest_ok = O.CORPI.filter(c => c.tipo === 'pianeta');
 const ZONE = [['Sistema interno', ['mercurio', 'venere', 'terra', 'marte']], ['Fascia degli asteroidi (stazioni)', ['vesta', 'cerere', 'igea', 'pallade']], ['Oltre la fascia', ['giove', 'saturno', 'urano', 'nettuno', 'plutone']]];
 for (const id of ['orig', 'dest']) ZONE.forEach(([nome, ids]) => { const og = document.createElement('optgroup'); og.label = nome;
-  ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + (O.PORTI[c.id] ? '  (' + (ROCCE.includes(i) ? 'stazione ' : 'porto ') + O.PORTI[c.id] + ')' : ''), c.id); og.appendChild(op); });
+  ids.forEach(i => { const c = O.per_id[i], op = new Option(c.nome + etichettaPorti(c.id), c.id); og.appendChild(op); });
   $(id).appendChild(og); });
 $('orig').value = 'terra'; $('dest').value = 'marte';
-const BUILD = 8;
+const BUILD = 9;
 // ---- modalita' di visualizzazione: essenziale (solo pianeti), a selezione (orbite e nomi di cio' che scegli o di cui hai un viaggio), completa (tutto)
 const MODI = { essenziale: 'Mappa essenziale', selezione: 'Mappa a selezione', completa: 'Mappa completa' }, CHIAVE_VISTA = 'st_mappa_vista_v1';
 let modoV = 'selezione'; try { const x = localStorage.getItem(CHIAVE_VISTA); if (MODI[x]) modoV = x; } catch (e) {}
@@ -610,12 +868,20 @@ function selezionaViaggio(id) { viaggioSel = (id === null || viaggioSel === id) 
 const mondo = new Tempo.Mondo(O.giorni(2412, 1, 1)), CT = Contratti;
 CT.EPOCA = O.giorni(2412, 1, 1); mondo.generaContratto = CT.genera; mondo.iniziaContratti(CT.PORTI, CT.SLOT_PER_PORTO);
 let caricaSel = new Set();                                                              // contratti firmati spuntati per l'operazione di carico del viaggio selezionato
+const f1 = (x, n = 1) => x.toFixed(n).replace('.', ',');
+const nomeCorpo = id => (O.per_id[id] || {}).nome || id;
 const cr = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' cr';
-const costoProp = (dv, N) => O.propellente(dv, N).t * CT.PREZZO_PROP[N.motore];          // dipende da massa della nave e motore, non dal carico
+const PORTO_INIZIALE = { rocinante: 'terra', baio: 'venere', zoccolo: 'marte', bardotto: 'terra', tuono: 'cerere' };          // dove si trovano le navi all'inizio (provvisorio)
+mondo.prezzoProp = id => CT.PREZZO_PROP[O.FLOTTA[id].motore];
+mondo.minPropNec = (id, porto) => { const n = O.FLOTTA[id]; let best = null; for (const k in CT.ROTTE) { if (k.split('>')[0] !== porto) continue; const q = O.propellente(CT.ROTTE[k].dv, n).t; if (q <= n.serbatoio && (best === null || q < best)) best = q; } return best; };      // propellente della rotta piu' economica possibile da quel porto
+mondo.tipoPorto = O.tipoPorto; mondo.propaga = (r, v, dt) => O.propaga(r, v, dt);
+mondo.iniziaFlotta(Object.values(O.FLOTTA).map(n => ({ id: n.id, cap: n.serbatoio, porto: PORTO_INIZIALE[n.id] })));        // ogni nave ha il suo serbatoio, pieno all'inizio
+const prezzoProp = N => CT.PREZZO_PROP[N.motore];                                            // crediti per tonnellata, per tipo di motore
+const serb = id => mondo.navi[id] || { cap: 0, carb: 0, persa: false };
 let t = mondo.t, W = 1, H = 1, dpr = 1;
 let view = { follow: null, cx: 0, cy: 0, scale: 120 / AU, nome: 'interno' };
-const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], terra: ['Terra e Luna', 'terra', 6e-5], marte: ['Marte e Fobos', 'marte', 6e-5],
-  giove: ['Giove e le sue lune', 'giove', 3.2e-5], saturno: ['Saturno e Titano', 'saturno', 4.5e-5], nettuno: ['Nettuno e Tritone', 'nettuno', 6e-5], plutone: ['Plutone e Caronte', 'plutone', 6e-5] };
+const VIEWS = { interno: ['Sistema interno', null, 110 / AU], solare: ['Sistema solare', null, 14 / AU], mercurio: ['Mercurio e porto Caloris', 'mercurio', 6e-5], venere: ['Venere e porto Afrodite', 'venere', 6e-5], terra: ['Terra, Luna e i loro porti', 'terra', 6e-5], marte: ['Marte, porto Ares e Fobos', 'marte', 6e-5],
+  giove: ['Giove e le sue lune', 'giove', 3.2e-5], saturno: ['Saturno e Titano', 'saturno', 4.5e-5], urano: ['Urano e la stazione scientifica', 'urano', 6e-5], nettuno: ['Nettuno e Tritone', 'nettuno', 6e-5], plutone: ['Plutone e Caronte', 'plutone', 6e-5] };
 for (const k in VIEWS) $('view').add(new Option(VIEWS[k][0], k));
 function setView(k) { const v = VIEWS[k]; view.follow = v[1]; view.scale = v[2]; view.cx = 0; view.cy = 0; $('view').value = k; }
 $('view').onchange = e => { const v = VIEWS[e.target.value]; volaVerso(v[1] ? { id: v[1], scale: v[2] } : { centro: [0, 0], scale: v[2] }); e.target.blur(); };
@@ -666,14 +932,15 @@ function inquadraTraiettoria(durata) {
   const scala = Math.max(MINS, Math.min(MAXS, Math.min((W - 2 * pad - 60) / bw, (H - 2 * pad) / bh)));
   volaVerso({ centro: [(x0 + x1) / 2, (y0 + y1) / 2], scale: scala }, durata);
 }
-const sx = x => W / 2 + (x - C0[0]) * view.scale, sy = y => H / 2 - (y - C0[1]) * view.scale;      // y verso l'alto
+let offX = 0;                                                                                    // il centro della mappa si sposta a destra quando una schermata copre la parte sinistra
+const sx = x => W / 2 + offX + (x - C0[0]) * view.scale, sy = y => H / 2 - (y - C0[1]) * view.scale;      // y verso l'alto
 const MINS = 2e-9, MAXS = 2e-3, LN0 = Math.log(MINS), LN1 = Math.log(MAXS);
 function fermaVolo() { if (anim) { anim = null; } }
 function zoomAt(fattore, mx = W / 2, my = H / 2) {
   fermaVolo();                 // zoom attorno al punto indicato (di default il centro)
-  const prima = [C0[0] + (mx - W / 2) / view.scale, C0[1] - (my - H / 2) / view.scale];
+  const prima = [C0[0] + (mx - W / 2 - offX) / view.scale, C0[1] - (my - H / 2) / view.scale];
   view.scale = Math.max(MINS, Math.min(MAXS, view.scale * fattore));
-  const dopo = [C0[0] + (mx - W / 2) / view.scale, C0[1] - (my - H / 2) / view.scale];
+  const dopo = [C0[0] + (mx - W / 2 - offX) / view.scale, C0[1] - (my - H / 2) / view.scale];
   view.cx += prima[0] - dopo[0]; view.cy += prima[1] - dopo[1];
 }
 cv.addEventListener('wheel', e => {
@@ -713,23 +980,31 @@ function cercaFinestre(inquadra) {
     const finito = O.grigliaAvanza(g, 6);
     disegnaPork(); if (!finito) $('info').textContent = 'calcolo delle finestre… ' + Math.round(100 * g.fatto / g.nD) + '%';
     if (!finito) { setTimeout(passo, 0); return; }
-    calcolo = null; g.finestre = trovaFinestre(g).filter(validaTDep); sel = (g.finestre.find(f => f.dv <= 1.15 * g.best.dv) || g.finestre[0] || null);          // si propone la prima finestra quasi economica come la migliore, senza far aspettare per risparmiare pochissimo
+    calcolo = null; g.tutte = trovaFinestre(g); g.finestre = g.tutte.filter(validaTDep); sel = (g.finestre.find(f => f.dv <= 1.15 * g.best.dv) || g.finestre[0] || null);          // si propone la prima finestra quasi economica come la migliore, senza far aspettare per risparmiare pochissimo
    disegnaPork(); elencoFinestre(); mostraPiano(); if (inquadra) inquadraTraiettoria();
   };
   passo();
 }
 $('cerca').onclick = () => cercaFinestre(true);
 const naveSel = () => O.FLOTTA[$('nave').value] || O.NAVE_PROVA;
-const validaTDep = p => p.tDep >= t + Tempo.ALONE_D;                         // almeno 5 ore di preparazione
-function aggiornaNavi() {
-  const cur = $('nave').value; $('nave').innerHTML = '';
-  Object.values(O.FLOTTA).forEach(n => { const imp = mondo.naveImpegnata(n.id), op = new Option(n.nome + '  (classe ' + n.classe + ')' + (imp ? ' · impegnata' : ''), n.id); op.disabled = imp; $('nave').add(op); });
+const validaTDep = p => p.tDep >= t + Tempo.ALONE_D && p.tDep >= mondo.postoNave(naveSel().id).da;                         // almeno 5 ore di preparazione, e la nave dev'essere arrivata (catena di viaggi)
+function aggiornaNavi() {                                                                     // ogni nave parte dal porto in cui si trova o in cui sara' dopo i viaggi gia' prenotati
+  const cur = $('nave').value, orig = $('orig').value; $('nave').innerHTML = '';
+  Object.values(O.FLOTTA).forEach(n => { const sv = serb(n.id), ps = mondo.postoNave(n.id), lontana = !!ps.porto && ps.porto !== orig, dove = ps.porto ? nomeCorpo(ps.porto) : '—';
+    const op = new Option(n.nome + ' (' + n.classe + ') · ' + (ps.coda.length ? 'sarà a ' : '') + dove + ' · ' + f1(sv.carb, 1) + '/' + sv.cap + ' t' + (sv.persa ? ' · PERSA' : ps.inOrbita ? ' · in orbita' : lontana ? ' · altrove' : ps.coda.length ? ' · libera ' + fraG(ps.da - t) : ''), n.id); op.disabled = sv.persa || ps.inOrbita || lontana; $('nave').add(op); });
   const ok = [...$('nave').options].find(o => o.value === cur && !o.disabled) || [...$('nave').options].find(o => !o.disabled); if (ok) $('nave').value = ok.value;
 }
 aggiornaNavi();
-const infoNave = () => { const n = naveSel(); $('naveInfo').textContent = 'motore ' + O.MOTORI[n.motore].nome.toLowerCase() + ' · carico ' + n.carico + ' t · serbatoio ' + n.serbatoio + ' t (valori provvisori)'; };
-$('nave').onchange = () => { infoNave(); if (!gr || calcolo) return; disegnaPork(); elencoFinestre(); mostraPiano(); $('nave').blur(); };
+const infoNave = () => {
+  const n = naveSel(), orig = $('orig').value, liberi = [...$('nave').options].some(o => !o.disabled), sv = serb(n.id), ab = mondo.firmati.filter(f => f.stato === 'a bordo' && f.nave === n.id), ps = mondo.postoNave(n.id);
+  $('naveInfo').innerHTML = 'motore ' + O.MOTORI[n.motore].nome.toLowerCase() + ' · carico ' + n.carico + ' t · serbatoio ' + n.serbatoio + ' t (valori provvisori)'
+    + (ab.length ? '<br><span class="warn">' + n.nome + ' ha ' + ab.reduce((a, f) => a + f.c.carico, 0) + ' t a bordo (' + ab.map(f => 'per ' + nomeCorpo(f.c.dest)).join(', ') + ') e si trova a ' + nomeCorpo(sv.porto || ps.porto) + ': parte da lì, con quel carico.</span>' : '')
+    + (ps.coda.length ? '<br><span class="small">Dopo i viaggi già prenotati sarà a ' + nomeCorpo(ps.porto) + ' ' + fraG(ps.da - t) + ' (arrivo previsto più 5 ore): da lì può ripartire.</span>' : '')
+    + (liberi ? '' : '<br><span class="warn">Nessuna nave disponibile a ' + nomeCorpo(orig) + ': sposta una nave con un viaggio a vuoto verso questo porto.</span>');
+};
+$('nave').onchange = () => { const ps = mondo.postoNave($('nave').value); if (ps.porto && $('orig').value !== ps.porto) { $('orig').value = ps.porto; aggiornaNavi(); } infoNave(); if (gr && gr.tutte && !calcolo) { gr.finestre = gr.tutte.filter(validaTDep); if (sel && !validaTDep(sel)) sel = null; } if (!gr || calcolo) return; disegnaPork(); elencoFinestre(); mostraPiano(); $('nave').blur(); };
 infoNave();
+$('orig').addEventListener('change', () => { aggiornaNavi(); infoNave(); });
 for (const id of ['orig', 'dest']) $(id).addEventListener('change', e => { volaVerso({ id: e.target.value, scale: scalaCorpo(e.target.value) }); e.target.blur(); });
 const PK = { L: 52, R: 6, T: 8, B: 34 };
 const pkW = () => pk.width - PK.L - PK.R, pkH = () => pk.height - PK.T - PK.B;
@@ -757,7 +1032,7 @@ function disegnaPork() {
   pctx.textAlign = 'center'; pctx.fillStyle = '#7fe7ff'; pctx.fillText('partenza fra… (g giorni, m mesi, a anni) →', PK.L + pw / 2, h - 5);
   pctx.save(); pctx.translate(10, PK.T + ph / 2); pctx.rotate(-Math.PI / 2); pctx.fillText('durata del viaggio →', 0, 0); pctx.restore();
   $('lg0').textContent = isFinite(fmin) && fmin <= 1 ? Math.round(fmin * 100) + '% del serbatoio' : 'oltre il serbatoio'; $('lg1').textContent = '100%';
-  const xAl = PK.L + Math.max(0, t + Tempo.ALONE_D - gr.t0) / gr.H * pw, xNow = PK.L + Math.max(0, t - gr.t0) / gr.H * pw;           // passato e alone di 5 ore: visibili ma non selezionabili
+  const xAl = PK.L + Math.max(0, Math.max(t + Tempo.ALONE_D, mondo.postoNave(naveSel().id).da) - gr.t0) / gr.H * pw, xNow = PK.L + Math.max(0, t - gr.t0) / gr.H * pw;           // passato e alone di 5 ore: visibili ma non selezionabili
   pctx.save(); pctx.globalAlpha = 0.92; pctx.fillStyle = tratteggio(); pctx.fillRect(PK.L, PK.T, Math.max(6, xAl - PK.L), ph); pctx.restore();
   pctx.strokeStyle = '#6bff9a'; pctx.lineWidth = 2; pctx.beginPath(); pctx.moveTo(xNow, PK.T - 2); pctx.lineTo(xNow, PK.T + ph); pctx.stroke();
   pctx.fillStyle = '#6bff9a'; pctx.textAlign = 'left'; pctx.fillText('adesso', Math.min(xNow + 4, PK.L + pw - 40), PK.T + 10);
@@ -784,50 +1059,65 @@ function trovaFinestre(g) {                                         // i minimi 
 const pctTxt = p => { const q = O.propellente(p.dv, naveSel()); return q.frac > 1 ? '<span class="warn">oltre serbatoio</span>' : Math.round(q.frac * 100) + '% (' + f1(q.t, 0) + ' t)'; };
 function elencoFinestre() {
   const box = $('finestre'); if (!gr || !gr.finestre || !gr.finestre.length) { box.textContent = 'Nessuna finestra nel periodo.'; return; }
-  box.innerHTML = '<div class="wh"><span>partenza</span><span>durata</span><span>propellente</span></div>';
+  box.innerHTML = '<div class="wh"><span>partenza</span><span>ARRIVO</span><span>durata</span><span>propellente</span></div>';
   const migl = Math.min(...gr.finestre.map(q => q.dv));
   gr.finestre.forEach(p => { const b = document.createElement('button'); b.className = 'win';
-    b.innerHTML = `<span>${fraG(p.tDep - gr.t0)}<br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep)}</span></span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
+    b.innerHTML = `<span>${fraG(p.tDep - gr.t0)}<br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep)}</span></span><span><b style="color:#fff">${fraG(p.tDep + p.tof - gr.t0)}</b><br><span style="font-size:10px;color:#6f8aa0">${gg(p.tDep + p.tof)}</span></span><span>${tofTxt(p.tof)}</span><span class="${p.dv === migl ? 'ok' : ''}">${pctTxt(p)}${p.dv === migl ? ' ◆' : ''}</span>`;
     b.onclick = () => { sel = p; disegnaPork(); mostraPiano(); inquadraTraiettoria(); }; box.appendChild(b); });
 }
 const hovIniziale = 'Passa il mouse sul diagramma per leggere un viaggio. Clicca per sceglierlo.';
 pk.addEventListener('mousemove', e => {
   if (!gr || calcolo) return; const q = daDiagramma(e); if (!q) { $('hov').textContent = hovIniziale; return; }
   const p = O.piano(gr.orig, gr.dest, q.td, q.tf); if (!p) { $('hov').innerHTML = '<span class="warn">Viaggio impossibile: passa troppo vicino al Sole.</span>'; return; }
-  if (!validaTDep(p)) { $('hov').innerHTML = '<span class="warn">Troppo vicina o già passata: servono almeno 5 ore di preparazione.</span>'; return; }
+  if (!validaTDep(p)) { $('hov').innerHTML = '<span class="warn">Non disponibile: troppo vicina o già passata (servono 5 ore) oppure la nave non è ancora arrivata.</span>'; return; }
   $('hov').innerHTML = `partenza <b>${traTxt(p.tDep - gr.t0)}</b> (${gg(p.tDep)}) · arrivo ${gg(p.tDep + p.tof)}<br>durata <b>${tofTxt(p.tof)}</b> · propellente <b>${pctTxt(p)}</b>`;
 });
 pk.addEventListener('mouseleave', () => { $('hov').textContent = hovIniziale; });
 pk.addEventListener('click', e => {
   if (!gr || calcolo) return; const q = daDiagramma(e); if (!q) return; const p = O.piano(gr.orig, gr.dest, q.td, q.tf);
-  if (p && !validaTDep(p)) { $('info').innerHTML = '<span class="warn">Finestra troppo vicina o già passata: servono almeno 5 ore di preparazione.</span>'; return; }
+  if (p && !validaTDep(p)) { $('info').innerHTML = '<span class="warn">Finestra non disponibile: troppo vicina o già passata (servono 5 ore), oppure la nave non è ancora arrivata.</span>'; return; }
   if (p) { sel = p; disegnaPork(); mostraPiano(); inquadraTraiettoria(); } else $('info').innerHTML = '<span class="warn">Traiettoria non valida: passa a meno di ' + O.RP_MIN + ' UA dal Sole (zona grigia).</span>';
 });
-const f1 = (x, n = 1) => x.toFixed(n).replace('.', ',');
+
 const gg = d => O.data(d).toISOString().slice(0, 10);
 // Il tempo si legge in GIORNI: "fra 513 g" e' il valore principale, la data resta piccola accanto. Il margine confronta scadenza e arrivo in giorni.
 const fraG = d => d < -1 ? Math.round(-d) + ' g fa' : d < 1 / 24 ? 'ora' : d < 1 ? 'fra ' + Math.max(1, Math.round(d * 24)) + ' h' : 'fra ' + Math.round(d) + ' g' + (d >= 400 ? ' (' + f1(d / 365.25, 1) + ' anni)' : '');
+const fraS = abs => '<span class="fg" data-a="' + abs + '">' + fraG(abs - mondo.t) + '</span>';
+const realeS = abs => '<span class="fr" data-a="' + abs + '"></span>';
+let ultimoTempi = 0;
+function aggiornaTempi() {
+  const n = performance.now(); if (n - ultimoTempi < 200) return; ultimoTempi = n; const vu = Math.max(1, mondo.velUtente());
+  document.querySelectorAll('#sBody .fg,#riass .fg').forEach(el => { const x = fraG(+el.dataset.a - mondo.t); if (el.textContent !== x) el.textContent = x; });
+  document.querySelectorAll('#riass .gd').forEach(el => { const x = String(Math.floor(mondo.giorniDallAvvio())); if (el.textContent !== x) el.textContent = x; });
+  document.querySelectorAll('#riass .fr').forEach(el => { const d = +el.dataset.a - mondo.t, x = vu > 1.5 && d > 0 ? ' · ' + fmtReale(d * 86400 / vu) + ' reali' : ''; if (el.textContent !== x) el.textContent = x; });
+}
 const dtp = d => '<span class="dt">' + gg(d) + '</span>';
-const margine = (scad, arrivo) => { const rit = Math.ceil(arrivo - scad - 1e-9); if (rit > 0) return { rit, cls: 'warn', txt: '−' + rit + ' g di ritardo (−' + Math.min(100, Math.round(rit * CT.RITARDO_AL_GIORNO * 100)) + '% del compenso)' }; return { rit: 0, cls: 'ok', txt: '+' + Math.floor(scad - arrivo) + ' g di margine' }; };
+// Il ritardo pesa in percentuale della durata D del contratto (dalla firma alla data): -1% del compenso ogni 1% di D, zero a D, penale fino al 100% a 2D.
+const DK = k => { const f = mondo.firmati.find(x => x.id === k.cid); return f ? mondo.durataContratto(f) : CT.DURATA_MIN; };
+const margine = (scad, arrivo, D) => { D = Math.max(CT.DURATA_MIN, D || CT.DURATA_MIN); const L = Math.ceil(arrivo - scad - 1e-9);
+  if (L <= 0) return { rit: 0, cls: 'ok', txt: '+' + Math.floor(scad - arrivo) + ' g di margine' };
+  if (L < D) return { rit: L, cls: 'warn', txt: '−' + L + ' g di ritardo (−' + Math.round(L / D * 100) + '% del compenso)' };
+  if (L < 2 * D) return { rit: L, cls: 'warn', txt: L + ' g di ritardo: compenso 0 e penale ' + Math.round((L - D) / D * 100) + '%' };
+  return { rit: L, cls: 'warn', txt: L + ' g di ritardo: contratto scaduto, penale 100%' }; };
 function mostraPiano() {
   if (!sel) { $('info').textContent = gr && gr.finestre && !gr.finestre.length ? 'Nessuna finestra utile in questo periodo.' : 'Nessuna soluzione trovata.'; $('parti').disabled = true; return; }
   const N = naveSel(), pr = O.propellente(sel.dv, N), fuori = pr.frac > 1;
-  const costo = costoProp(sel.dv, N), nosaldo = mondo.saldo - mondo.impegnato() < costo;
+  const sv = serb(N.id), ok = sv.carb + 1e-9 >= pr.t, arr = sel.tDep + sel.tof;
   const durata = sel.tof >= 700 ? f1(sel.tof / 365.25, 1) + ' anni' : f1(sel.tof, 0) + ' giorni', sub = sel.tof >= 700 ? f1(sel.tof, 0) + ' giorni' : '≈ ' + f1(sel.tof / 30.44, 1) + ' mesi';
   const avv = sel.rp < 0.35 * AU ? `<div class="warn" style="margin-bottom:6px">Attenzione: passa a ${f1(sel.rp / AU, 2)} UA dal Sole (zona molto calda).</div>` : '';
-  $('info').innerHTML = avv + `<div class="grande"><div><span class="et">DURATA</span><b>${durata}</b><span class="sub">${sub}</span></div>
-    <div class="${fuori ? 'fuori' : ''}"><span class="et">PROPELLENTE</span><b>${fuori ? '> 100%' : Math.round(pr.frac * 100) + '%'}</b><span class="sub">${f1(pr.t, 1)} t su ${N.serbatoio} t${fuori ? ' · non basta' : ''}</span></div></div>
-  <div class="row"><span>partenza</span><span class="ok">${fraG(sel.tDep - t)} ${dtp(sel.tDep)}</span></div>
-  <div class="row"><span>arrivo</span><span>${fraG(sel.tDep + sel.tof - t)} ${dtp(sel.tDep + sel.tof)}</span></div>
-  <div class="row"><span>costo propellente</span><span>${cr(costo)}${nosaldo ? ' · <b style="color:#ff6a6a">saldo insufficiente</b>' : ''}</span></div>
+  $('info').innerHTML = avv + `<div class="arrivo"><span class="et">ARRIVO PREVISTO</span><b>${fraG(arr - t)}</b><span class="sub">${dtp(arr)} · partenza ${fraG(sel.tDep - t)} ${dtp(sel.tDep)} · durata ${durata}</span></div>
+  <div class="grande"><div class="${fuori || !ok ? 'fuori' : ''}"><span class="et">PROPELLENTE NECESSARIO</span><b>${fuori ? '> 100%' : Math.round(pr.frac * 100) + '%'}</b><span class="sub">${f1(pr.t, 1)} t su ${N.serbatoio} t di serbatoio${fuori ? ' · non basta' : ''}</span></div>
+    <div class="${ok ? '' : 'fuori'}"><span class="et">${N.nome.toUpperCase()}: ORA NEL SERBATOIO</span><b>${f1(sv.carb, 1)} t</b><span class="sub">${ok ? 'all\'arrivo resteranno ' + f1(sv.carb - pr.t, 1) + ' t' : 'mancano ' + f1(pr.t - sv.carb, 1) + ' t'}</span></div></div>
+  ${fuori ? `<div class="warn" style="margin:4px 0">Questa tratta richiede ${f1(pr.t, 1)} t di propellente: più dei ${N.serbatoio} t di serbatoio di ${N.nome}. Prova una nave con più autonomia (nucleare) o spezza il viaggio in tappe: carica il contratto sul primo tratto e prosegui dopo il rifornimento.</div>` : ''}
   <div class="small" style="margin-top:4px">I contratti si caricano dopo la prenotazione, dalla scheda del viaggio.</div>
+  ${ok ? '' : '<div class="warn" style="margin:4px 0">Serbatoio insufficiente: fai rifornimento dal Porto prima della partenza, altrimenti il razzo e il carico andranno persi a metà viaggio.</div>'}
   <details><summary>dettagli tecnici</summary>
     <div class="row"><span>variazione di velocità totale</span><span>${f1(sel.dv, 2)} km/s</span></div>
     <div class="row"><span>velocità relativa ai pianeti (partenza + arrivo)</span><span>${f1(sel.vinf1, 1)} + ${f1(sel.vinf2, 1)} km/s</span></div>
     <div class="row"><span>distanza minima dal Sole</span><span>${f1(sel.rp / AU, 2)} UA</span></div></details>`;
-  const imp = mondo.naveImpegnata(N.id), pieno = mondo.attivi().length >= Tempo.MAXPREN, vicina = !validaTDep(sel);
-  $('parti').disabled = fuori || imp || pieno || vicina || nosaldo;
-  $('parti').textContent = fuori ? 'Propellente insufficiente per questa nave' : nosaldo ? 'Saldo insufficiente: chiedi un prestito' : imp ? 'Nave già impegnata' : pieno ? 'Hai già ' + Tempo.MAXPREN + ' viaggi prenotati' : vicina ? 'Finestra troppo vicina' : 'Prenota il lancio';
+  const imp = mondo.naveImpegnata(N.id), pieno = mondo.attivi().length >= Tempo.MAXPREN, vicina = !validaTDep(sel), psN = mondo.postoNave(N.id), doveN = psN.porto, altrove = !!doveN && doveN !== (sel.orig.id || sel.orig), nonLibera = sel.tDep < psN.da;
+  $('parti').disabled = fuori || pieno || vicina || sv.persa || altrove || nonLibera || psN.inOrbita;
+  $('parti').textContent = fuori ? 'Propellente insufficiente per questa nave' : sv.persa ? 'Nave perduta' : psN.inOrbita ? N.nome + ' attende l\'attracco' : altrove ? N.nome + ' ' + (psN.coda.length ? 'sarà a ' : 'è a ') + nomeCorpo(doveN) + ': parte solo da lì' : nonLibera ? N.nome + ' arriva ' + fraG(psN.da - t) + ': parti dopo' : imp ? 'Nave già impegnata' : pieno ? 'Hai già ' + Tempo.MAXPREN + ' viaggi prenotati' : vicina ? 'Finestra troppo vicina' : 'Prenota il lancio';
 }
 
 // ---- disegno ----
@@ -956,23 +1246,29 @@ function traiettoriaAnimata(pts, rgb, a0, a1) {
 }
 // Etichette dei corpi: se due si sovrappongono, la meno importante si sposta (con un movimento dolce) in un altro punto attorno al suo corpo
 const LAB = {};
-function disegnaEtichette(E) {
+function disegnaEtichette(E, ostacoli) {
+  // Ogni etichetta cerca un posto libero attorno al suo corpo, evitando le altre etichette e anche corpi, lune, navi e simboli dei porti (ostacoli).
+  // Se non c'e' posto: le etichette importanti restano dove sono, quelle secondarie (lune, rocce) non si disegnano finche' lo zoom non lascia spazio.
   ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left'; const LH = 12, occ = []; E.sort((a, b) => a.pri - b.pri || a.x - b.x);
+  const urta = (R, own) => occ.some(o => R.x < o.x + o.w && R.x + R.w > o.x && R.y < o.y + o.h && R.y + R.h > o.y) || ostacoli.some(q => { if (q.id === own) return false; const nx = Math.max(R.x, Math.min(q.x, R.x + R.w)), ny = Math.max(R.y, Math.min(q.y, R.y + R.h)); return Math.hypot(nx - q.x, ny - q.y) < q.r; });
   for (const e of E) {
-    const w = Math.max(...e.L.map(l => ctx.measureText(l[0]).width)), h = e.L.length * LH, r = e.r + 8, cand = [];
-    for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([r, -6 + dy]);
-    for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([-(r + w), -6 + dy]);
-    cand.push([-w / 2, e.r + 8], [-w / 2, -e.r - 8 - h]);
-    const libero = k => { const R = { x: e.x + cand[k][0] - 2, y: e.y + cand[k][1] - 2, w: w + 4, h: h + 4 }; return !occ.some(o => R.x < o.x + o.w && R.x + R.w > o.x && R.y < o.y + o.h && R.y + R.h > o.y); };
-    let k = cand.findIndex((_, i) => libero(i)); if (k < 0) k = 0;
+    const w = Math.max(...e.L.map(l => ctx.measureText(l[0]).width)), h = e.L.length * LH, cand = [];
+    for (const dist of [e.r + 8, e.r + 22]) {
+      for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([dist, -6 + dy]);
+      for (const dy of [0, h, -h, 2 * h, -2 * h]) cand.push([-(dist + w), -6 + dy]);
+      cand.push([-w / 2, dist], [-w / 2, -dist - h], [dist * 0.7, -dist * 0.7 - h], [dist * 0.7, dist * 0.7], [-dist * 0.7 - w, -dist * 0.7 - h], [-dist * 0.7 - w, dist * 0.7]);
+    }
+    const libero = k => urta({ x: e.x + cand[k][0] - 2, y: e.y + cand[k][1] - 2, w: w + 4, h: h + 4 }, e.own || e.id) === false;
+    let k = cand.findIndex((_, i) => libero(i)); if (k < 0) { if (e.pri >= 2) continue; k = 0; }
     const st = LAB[e.id] || (LAB[e.id] = { dx: cand[k][0], dy: cand[k][1] }); st.dx += (cand[k][0] - st.dx) * 0.2; st.dy += (cand[k][1] - st.dy) * 0.2;
     occ.push({ x: e.x + cand[k][0] - 2, y: e.y + cand[k][1] - 2, w: w + 4, h: h + 4 });
     if (k > 0) { const lx = e.x + st.dx + (st.dx < 0 ? w : 0), ly = e.y + st.dy + h / 2, d = Math.hypot(lx - e.x, ly - e.y) || 1; ctx.strokeStyle = 'rgba(159,180,200,0.3)'; ctx.beginPath(); ctx.moveTo(e.x + (lx - e.x) / d * (e.r + 2), e.y + (ly - e.y) / d * (e.r + 2)); ctx.lineTo(lx, ly); ctx.stroke(); }
     e.L.forEach((l, i) => { ctx.fillStyle = l[1]; ctx.fillText(l[0], e.x + st.dx, e.y + st.dy + 10 + i * LH); });
   }
 }
-let navi = [];                                                                            // navi disegnate in questo fotogramma (per cliccarle)
+let navi = [], obst = [];                                                                            // navi disegnate in questo fotogramma (per cliccarle)
 function disegna() {
+  { const tgt = schermoAperto ? $('schermo').offsetWidth / 2 : 0; offX += (tgt - offX) * 0.12; if (Math.abs(tgt - offX) < 0.3) offX = tgt; }
   ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H); C0 = centro();
   // orbite dei pianeti
   ctx.lineWidth = 1;
@@ -992,20 +1288,21 @@ function disegna() {
   ctx.fillStyle = gs; ctx.beginPath(); ctx.arc(sx(0), sy(0), rSole * 1.9, 0, 7); ctx.fill();
   ctx.fillStyle = '#ffd37a'; ctx.beginPath(); ctx.arc(sx(0), sy(0), rSole, 0, 7); ctx.fill();
   ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign = 'left';
-  const etich = []; navi = [];
+  const etich = []; navi = []; obst = [];
   const mostraLune = view.scale > 3e-6, lungheLune = view.scale > 2e-5; let ingrandita = false;
   for (const c of O.CORPI) {
     const s0 = O.stato(c, t), x = sx(s0.x), y = sy(s0.y); if (x < -120 || x > W + 120 || y < -120 || y > H + 120) continue;
     const rBase = 22 * Math.pow(c.R / 6371, 0.3), rr = Math.min(72, Math.max(rBase * kz, c.R * view.scale)), porto = O.PORTI[c.id];
     const roccia = ROCCE.includes(c.id);
     if (roccia) disegnaRoccia(c, x, y, rr, [sx(0) - x, sy(0) - y]); else disegnaPianeta(c, x, y, rr, [sx(0) - x, sy(0) - y]);
-    const rAnelli = c.id === 'saturno' ? rr * 2.3 : rr;
-    if (porto) { if (roccia) disegnaStazione(x, y, rr); else { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(x, y, rr + 5, 0, 7); ctx.stroke(); } }
+    const rAnelli = c.id === 'saturno' ? rr * 2.3 : rr; obst.push({ id: c.id, x, y, r: rAnelli + 3 });
+    if (roccia) { if (porto) { disegnaStazione(x, y, rr); obst.push({ id: 'st' + c.id, x: x + rr + 12, y: y - rr - 12, r: 13 }); } }
+    else { const pe = O.portiDi(c.id).filter(e => !(mostraLune && e.corpo !== c.id && !e.orbitante)); pe.forEach((e, i) => { const an = -1.0 + i * 0.55, d = rr + 13, ix = x + d * Math.cos(an), iy = y + d * Math.sin(an); iconaPorto(ix, iy, e.tipo, e.corpo !== c.id); obst.push({ id: 'ic' + c.id + i, x: ix, y: iy, r: 9 }); }); }
     const attivo = completa || (modoV === 'selezione' && FOC.has(c.id)), Lb = [];
     if (!roccia || attivo || view.scale > 5e-7) Lb.push([c.nome + (c.fasefittizia ? '*' : ''), RC[c.id] || '#9fb4c8']);
     if (roccia && attivo) Lb.push([c.id === 'cerere' ? 'pianeta nano' : c.id === 'pallade' ? 'asteroide, orbita inclinata' : 'asteroide', '#6f8aa0']);
-    if (porto && (attivo || view.scale > 3e-6)) Lb.push([(roccia ? '◎ stazione ' : '◎ porto ') + porto, '#6bff9a']);
-    if (Lb.length) etich.push({ id: c.id, x, y, r: rAnelli, L: Lb, pri: FOC.has(c.id) ? 0 : roccia ? 2 : 1 });
+    if (attivo || view.scale > 3e-6) { if (roccia) { if (porto) Lb.push(['◎ ' + O.etichettaPorto(c.id), '#6bff9a']); } else O.portiDi(c.id).forEach(e => { if (mostraLune && e.corpo !== c.id && !e.orbitante) return; Lb.push(['◎ ' + O.etichettaPorto(e.id) + (e.corpo !== c.id && !e.orbitante ? ' · su satellite' : ''), e.tipo === 'scientifico' ? '#ffb347' : '#6bff9a']); }); }
+    if (Lb.length) etich.push({ id: c.id, x, y, r: rAnelli, L: Lb, pri: FOC.has(c.id) ? 0 : roccia ? 2 : 1, own: c.id });
     if (!mostraLune) continue;
     const lune = O.LUNE.filter(l => l.parent === c.id).sort((p1, p2) => p1.a - p2.a);
     lune.forEach((l, i) => {
@@ -1014,15 +1311,14 @@ function disegna() {
       const ang = (l.fase + (rapida ? 0 : 360 * t / l.periodo)) * O.DEG, lx = x + orbPx * Math.cos(ang), ly = y - orbPx * Math.sin(ang), rl = Math.min(8, 2.4 + 0.1 * rr);
       ctx.strokeStyle = '#17304a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, orbPx, 0, 7); ctx.stroke();
       ctx.globalAlpha = rapida ? 0.35 : 1; disegnaPianeta({ id: 'luna-' + l.id, col: '#c9c6bd' }, lx, ly, rl, [x - lx, y - ly]); ctx.globalAlpha = 1;
-      if (O.PORTI[l.id]) { ctx.strokeStyle = '#6bff9a'; ctx.beginPath(); ctx.arc(lx, ly, rl + 4, 0, 7); ctx.stroke(); }
-      if (lungheLune) { ctx.fillStyle = '#7f98ae'; ctx.fillText(l.nome + (rapida ? ' (orbita rapida)' : ''), lx + rl + 7, ly + 3); if (O.PORTI[l.id]) { ctx.fillStyle = '#6bff9a'; ctx.fillText('◎ porto ' + O.PORTI[l.id], lx + rl + 7, ly + 16); } }
+      obst.push({ id: 'luna-' + l.id, x: lx, y: ly, r: rl + 3 }); const pl = O.PORTI_INFO[l.id]; if (pl) { iconaPorto(lx + rl + 9, ly - rl - 7, pl.tipo, false); obst.push({ id: 'icl-' + l.id, x: lx + rl + 9, y: ly - rl - 7, r: 9 }); }
+      if (lungheLune) { const Lm = [[l.nome + (rapida ? ' (orbita rapida)' : ''), '#7f98ae']]; if (pl) Lm.push(['◎ ' + O.etichettaPorto(l.id), pl.tipo === 'scientifico' ? '#ffb347' : '#6bff9a']); etich.push({ id: 'm-' + l.id, x: lx, y: ly, r: rl + 6, L: Lm, pri: pl ? 1.5 : 3, own: 'luna-' + l.id }); }
     });
   }
-  disegnaEtichette(etich);
   // posizioni dei corpi alla partenza e all'arrivo del piano scelto
   if (sel) for (const [c, tt, et] of [[sel.orig, sel.tDep, 'partenza'], [sel.dest, sel.tDep + sel.tof, 'arrivo']]) {
-    const q = O.stato(c, tt), gx = sx(q.x), gy = sy(q.y); ctx.strokeStyle = '#7fe7ff'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(gx, gy, 9, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#7fe7ff'; ctx.textAlign = 'left'; ctx.fillText(et + ' ' + gg(tt), gx + 13, gy + 14);
+    const q = O.stato(c, tt), gx = sx(q.x), gy = sy(q.y); ctx.strokeStyle = '#7fe7ff'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(gx, gy, 9, 0, 7); ctx.stroke(); ctx.setLineDash([]); obst.push({ id: 'pe' + et, x: gx, y: gy, r: 11 });
+    etich.push({ id: 'pe' + et, x: gx, y: gy, r: 11, L: [[et + ' ' + gg(tt), '#7fe7ff']], pri: 0.8 });
   }
   // navi delle prenotazioni: traiettoria tenue e posizione attuale
   for (const p of mondo.pren) {
@@ -1033,8 +1329,15 @@ function disegna() {
     const mia = viaggioSel === p.id;
     if (p.stato !== 'in orbita' && (mia || completa)) traiettoriaAnimata(puntiTraj('p' + p.id, p.r1, p.v1, p.tof), p.stato === 'in volo' ? '107,255,154' : '255,179,71', 0.3, 1);
     const x = sx(pos[0]), y = sy(pos[1]); navi.push({ id: p.id, x, y }); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, mia ? 4 : 3, 0, 7); ctx.fill();
-    if (mia || completa) { ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(O.FLOTTA[p.nave].nome, x + 12, y - 8); }
+    if (mia || completa) { ctx.strokeStyle = p.stato === 'in volo' ? '#6bff9a' : '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); ctx.lineWidth = 1; etich.push({ id: 'n' + p.id, x, y, r: 10, L: [[O.FLOTTA[p.nave].nome, '#fff']], pri: 0.9 }); }
+    obst.push({ id: 'n' + p.id, x, y, r: 6 });
   }
+  for (const rl of mondo.relitti) {                                                       // navi perse: continuano sull'orbita che avevano al momento della perdita
+    if (rl.recuperato || !rl.stato || t < rl.tPersa) continue; const q = O.propaga(rl.stato.r, rl.stato.v, (t - rl.tPersa) * DAY).r, x = sx(q[0]), y = sy(q[1]);
+    ctx.strokeStyle = '#ff6a6a'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x + 4, y - 4); ctx.lineTo(x - 4, y + 4); ctx.stroke(); ctx.lineWidth = 1; obst.push({ id: 'rl' + rl.id, x, y, r: 7 });
+    etich.push({ id: 'rl' + rl.id, x, y, r: 8, L: [[O.FLOTTA[rl.nave].nome + ' (alla deriva)', '#ff8a8a']], pri: 1.2 });
+  }
+  disegnaEtichette(etich, obst);
   // scala
   const ua = view.scale * AU; ctx.fillStyle = '#7f98ae'; ctx.textAlign = 'right';
   const lenKm = Math.pow(10, Math.floor(Math.log10(100 / view.scale))), lp = lenKm * view.scale; ctx.strokeStyle = '#7f98ae';
@@ -1064,7 +1367,6 @@ function puntiTraj(key, r1, v1, tofGiorni) {
   let best = T.liv[0]; for (const l of T.liv) if (l.n <= Math.max(need, 96)) best = l; return best.pts;
 }
 function trajPren(p) { let tr = trajCache.get(p.id); if (!tr) { tr = []; for (let i = 0; i <= 90; i++) tr.push(O.propaga(p.r1, p.v1, p.tof * DAY * i / 90).r); trajCache.set(p.id, tr); } return tr; }
-const nomeCorpo = id => (O.per_id[id] || {}).nome || id;
 const fmtTempo = d => O.data(d).toISOString().replace('T', ' ').slice(0, 19);
 function fmtReale(sec) { sec = Math.max(0, sec); if (sec < 90) return Math.round(sec) + ' s'; if (sec < 5400) return Math.round(sec / 60) + ' min'; if (sec < 172800) { const h = Math.floor(sec / 3600), m = Math.round((sec - h * 3600) / 60); return h + ' h' + (m ? ' ' + m + ' min' : ''); } return Math.round(sec / 86400) + ' giorni'; }
 function fmtGioco(d) { if (d < 0) d = 0; if (d < 1 / 24) return Math.round(d * 1440) + ' min'; if (d < 1) return f1(d * 24, d < 0.2 ? 1 : 0) + ' ore'; if (d < 45) return f1(d, d < 5 ? 1 : 0) + ' giorni'; if (d < 700) return Math.round(d / 30.44) + ' mesi'; return f1(d / 365.25, 1) + ' anni'; }
@@ -1086,6 +1388,10 @@ function toast(testo, ms = 8000) { const el = $('toast'); el.textContent = testo
 mondo.on = (tipo, ...a) => {
   if (tipo === 'preavviso') { const [p, ap] = a; suono(880, 0.25, 0.14); setTimeout(() => suono(880, 0.25, 0.14), 300); notifica((ap.tipo === 'partenza' ? 'Partenza' : 'Arrivo') + ' tra pochi secondi: ' + O.FLOTTA[p.nave].nome); }
   if (tipo === 'ritardo') suono(220, 0.5, 0.16, 'square');
+  if (tipo === 'gameover') { suono(196, 0.8, 0.16, 'sawtooth'); setTimeout(() => suono(147, 1.0, 0.16, 'sawtooth'), 500); salva(); setTimeout(() => schermataGameOver(a[0]), 400); }
+  if (tipo === 'fine') { const f = a[0]; suono(880, 0.2, 0.14); setTimeout(() => suono(1320, 0.3, 0.14), 220); setTimeout(() => suono(1760, 0.5, 0.14), 480); salva(); caricaRecordMappa(() => {}); setTimeout(() => schermataFine(f), 300); }
+  if (tipo === 'annullato_ufficio') { const [p, mot] = a; toast('Viaggio ' + nomeCorpo(p.orig) + ' → ' + nomeCorpo(p.dest) + ' annullato senza penale: ' + mot + '.', 9000); aggiornaNavi(); sigRiass = ''; }
+  if (tipo === 'persa') { const [p, pen] = a; suono(110, 1.2, 0.2, 'sawtooth'); toast('PERSA: ' + O.FLOTTA[p.nave].nome + ' ha finito il propellente a metà viaggio ' + nomeCorpo(p.orig) + ' → ' + nomeCorpo(p.dest) + '. Razzo e carico perduti' + (pen ? ' (penale ' + cr(pen) + ')' : '') + '. In futuro: radiofaro e missione di recupero.', 14000); sigRiass = ''; }
   if (tipo === 'attivo') suono(1320, 0.12, 0.12);
   if (tipo === 'esito') { const [p, ap, e, pen, rit] = a, N = O.FLOTTA[p.nave].nome; let m;
     if (ap.tipo === 'partenza') m = e === 'mancato' ? `Lancio mancato: la finestra è persa. Penale provvisoria ${pen} cr. Serve una nuova ricerca.` : e === 'riuscito_ritardo' ? `Partenza in ritardo di ${rit} s: penale provvisoria ${pen} cr. ${N} è in viaggio verso ${nomeCorpo(p.dest)}.` : `Partenza confermata (reazione ${f1(ap.reazione || 0, 1)} s). ${N} è in viaggio verso ${nomeCorpo(p.dest)}.`;
@@ -1113,28 +1419,32 @@ function impostaVel(v) { if (mondo.forzato || mondo.inPreavviso()) return; const
 $('velSl').addEventListener('input', () => { let p = +$('velSl').value / 1000; for (const pr of Tempo.PRESET) if (Math.abs(p - Tempo.sliderDaVel(pr.v)) < 0.02) p = Tempo.sliderDaVel(pr.v); impostaVel(Tempo.velDaSlider(p)); });
 // ---- pianificazione: apertura e chiusura
 function apriPian(o) {
-  apriSchermo('viaggi'); $('pianifica').hidden = false; $('apriPian').hidden = true; mondo.forzato = true; mondo.registra('pianifica_apri', o && o.cid ? { cid: o.cid } : {});
+  apriSchermo('viaggi'); $('pianifica').hidden = false; $('apriPian').hidden = true; mondo.registra('pianifica_apri', o && o.cid ? { cid: o.cid } : {});
   if (o) { $('orig').value = o.orig; $('dest').value = o.dest; }
-  aggiornaNavi(); infoNave(); try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
+  aggiornaNavi(); infoNave();
   if (o) $('cerca').click();
 }
-function chiudiPian(annullata) { $('pianifica').hidden = true; $('apriPian').hidden = false; mondo.forzato = false; gr = null; sel = null; calcolo = null; $('info').textContent = 'Cerca le finestre e scegline una.'; $('finestre').textContent = '…'; $('stato').textContent = ''; if (annullata) mondo.registra('pianifica_annulla'); }
+function chiudiPian(annullata) { $('pianifica').hidden = true; $('apriPian').hidden = false; gr = null; sel = null; calcolo = null; $('info').textContent = 'Cerca le finestre e scegline una.'; $('finestre').textContent = '…'; $('stato').textContent = ''; if (annullata) mondo.registra('pianifica_annulla'); }
 $('apriPian').onclick = () => apriPian(); $('annullaPian').onclick = () => chiudiPian(true);
 $('parti').onclick = () => {
   if (!sel || !gr) return; const N = naveSel(); const mn = Math.min(...(gr.finestre || []).map(f => f.dv)), prima = (gr.finestre || [])[0];
   const scelta = (gr.finestre || []).some(f => f.tDep === sel.tDep) ? (Math.abs(sel.dv - mn) < 1e-6 ? 'economica' : (prima && prima.tDep === sel.tDep ? 'prima' : 'altra')) : 'libera';
-  const costo = costoProp(sel.dv, N);
-  const r = mondo.prenota(sel, N.id, { scelta, costoProp: costo, caricoNave: N.carico }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
+  const propNec = O.propellente(sel.dv, N).t;
+  const r = mondo.prenota(sel, N.id, { scelta, propNec, caricoNave: N.carico }); if (!r.ok) { $('stato').innerHTML = '<span class="warn">' + r.motivo + '</span>'; return; }
   viaggioSel = r.pren.id; caricaSel = new Set(); apriSchermo('viaggi');
   toast('Lancio prenotato: ' + N.nome + ', ' + nomeCorpo(r.pren.orig) + ' → ' + nomeCorpo(r.pren.dest) + '. Carica i contratti dalla scheda del viaggio prima della partenza.', 6000); chiudiPian(false); aggiornaLista(true);
 };
 // ---- schermate (sopra la mappa): Ufficio, Flotta, Porto, Contratti, Viaggi
 let schermoAperto = null, sigSch = '';
-function apriSchermo(nome) { schermoAperto = nome; $('schermo').hidden = false; for (const sct of $('sBody').children) sct.hidden = sct.id !== 's-' + nome; document.querySelectorAll('#stab button[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === nome)); sigSch = ''; aggiornaSchermo(true); }
-function chiudiSchermo() { if (!$('pianifica').hidden) chiudiPian(true); schermoAperto = null; $('schermo').hidden = true; }
-document.querySelectorAll('#stab button[data-s],#navBtns button[data-s]').forEach(b => { b.onclick = () => { if (!$('pianifica').hidden && b.dataset.s !== 'viaggi') chiudiPian(true); apriSchermo(b.dataset.s); }; });
+function apriSchermo(nome) { schermoAperto = nome; $('schermo').hidden = false; $('mapw').classList.add('sch'); for (const sct of $('sBody').children) sct.hidden = sct.id !== 's-' + nome; document.querySelectorAll('#stab button[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === nome)); sigSch = ''; if (nome === 'viaggi') rivalutaPiano(); aggiornaSchermo(true); }
+function rivalutaPiano() { if (!$('pianifica').hidden && sel && !validaTDep(sel)) { sel = null; if (gr && !calcolo) { disegnaPork(); mostraPiano(); } $('stato').innerHTML = '<span class="warn">La finestra scelta è passata mentre eri altrove: scegline un\'altra.</span>'; } }
+function chiudiSchermo() { schermoAperto = null; $('schermo').hidden = true; $('mapw').classList.remove('sch'); }
+document.querySelectorAll('#stab button[data-s],#navBtns button[data-s]').forEach(b => { b.onclick = () => { apriSchermo(b.dataset.s); }; });
 $('sChiudi').onclick = chiudiSchermo;
-function aggiornaSchermo(forza) { if (!schermoAperto) return; if (schermoAperto === 'ufficio') aggiornaUfficio(forza); else if (schermoAperto === 'flotta') aggiornaFlotta(forza); else if (schermoAperto === 'viaggi') aggiornaDettaglio(forza); else if (schermoAperto === 'porto') aggiornaContr(forza); else if (schermoAperto === 'contratti') aggiornaFirm(forza); }
+{ let a = 'solido'; try { a = localStorage.getItem('st_mappa_aspetto') || 'solido'; } catch (e) {} const set = v => { $('schermo').className = v === 'solido' ? '' : v; $('aspetto').value = v; };
+  set(['solido', 'vetro', 'hud', 'fantasma'].includes(a) ? a : 'solido');
+  $('aspetto').onchange = e => { set(e.target.value); try { localStorage.setItem('st_mappa_aspetto', e.target.value); } catch (er) {} mondo.registra('aspetto', { a: e.target.value }); e.target.blur(); }; }
+function aggiornaSchermo(forza) { if (!schermoAperto) return; if (schermoAperto === 'ufficio') aggiornaUfficio(forza); else if (schermoAperto === 'flotta') aggiornaFlotta(forza); else if (schermoAperto === 'viaggi') aggiornaDettaglio(forza); else if (schermoAperto === 'porto') { aggiornaContr(forza); aggiornaRiforn(forza); aggiornaStock(forza); } else if (schermoAperto === 'contratti') aggiornaFirm(forza); }
 
 // ---- porto: offerte
 let sigContr = '', sigFirm = '', portoContr = 'terra';
@@ -1143,36 +1453,50 @@ const naviAdatte = c => Object.values(O.FLOTTA).filter(n => n.carico >= c.carico
 function aggiornaContr(forza) {
   if (schermoAperto !== 'porto' && !forza) return;
   const sel0 = $('portoContr'), lista = mondo.disponibili(portoContr), pieno = mondo.aperti().length >= CT.MAX_FIRMATI;
-  const sig = [portoContr, pieno, Math.floor(mondo.t), ...lista.map(x => x.c.id)].join('|');
+  const etic = po => nomeCorpo(po) + etichettaPorti(po) + ' · ' + mondo.disponibili(po).length + ' contratti';
+  if (sel0.options.length !== CT.PORTI.length) { sel0.innerHTML = ''; CT.PORTI.forEach(po => sel0.add(new Option(etic(po), po))); }
+  else if (document.activeElement !== sel0) CT.PORTI.forEach((po, i) => { const e = etic(po); if (sel0.options[i].text !== e) sel0.options[i].text = e; });      // la tendina non si ricostruisce mai: aggiorna solo il testo e solo se non e' in uso
+  if (sel0.value !== portoContr && document.activeElement !== sel0) sel0.value = portoContr;
+  const sig = [portoContr, pieno, ...lista.map(x => x.c.id)].join('|');
   if (sig === sigContr && !forza) return; sigContr = sig;
-  sel0.innerHTML = ''; CT.PORTI.forEach(po => sel0.add(new Option(nomeCorpo(po) + (O.PORTI[po] ? ' (' + O.PORTI[po] + ')' : '') + ' · ' + mondo.disponibili(po).length + ' contratti', po))); sel0.value = portoContr;
-  $('listaContr').innerHTML = lista.map(({ slot, c }) => { const resta = Math.max(0, c.tFrom + c.valida - mondo.t), arrRif = c.tw + c.tof, m = margine(c.scad, arrRif);
+  $('listaContr').innerHTML = lista.map(({ slot, c }) => { const arrRif = c.tw + c.tof, m = margine(c.scad, arrRif, c.scad - mondo.t), D = Math.max(CT.DURATA_MIN, c.scad - mondo.t);
     return `<div class="contr"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()} · compenso <b>${cr(c.pay)}</b></div>
-      <div class="s">consegna entro <b>${fraG(c.scad - mondo.t)}</b> ${dtp(c.scad)}<br>offerta valida ${fraG(resta)}<br>finestra utile: parte ${fraG(c.tw - mondo.t)}, dura ≈ ${c.tof} g → consegna ${fraG(arrRif - mondo.t)}: <span class="${m.cls}">${m.txt}</span><br>navi adatte: ${naviAdatte(c)}</div>
+      <div class="s">consegna entro <b>${fraS(c.scad)}</b> ${dtp(c.scad)}<br>offerta valida ${fraS(c.tFrom + c.valida)}<br>finestra utile: parte ${fraS(c.tw)}, dura ≈ ${c.tof} g → consegna ${fraS(arrRif)}: <span class="${m.cls}">${m.txt}</span><br>ritardo: −1% del compenso ogni ${f1(D / 100, 1)} g · annullare prima della partenza: ${cr(c.pay * CT.PENALE_ANNULLO)} (10%)<br>navi adatte: ${naviAdatte(c)}</div>
       <button data-s="${slot}" ${pieno ? 'disabled' : ''}>${pieno ? 'Hai già ' + CT.MAX_FIRMATI + ' contratti aperti' : 'Firma il contratto'}</button></div>`; }).join('');
   $('listaContr').querySelectorAll('button[data-s]').forEach(b => { b.onclick = () => { const r = mondo.firma(b.dataset.s); toast(r.ok ? 'Contratto firmato: ' + nomeCorpo(r.c.orig) + ' → ' + nomeCorpo(r.c.dest) + ', consegna ' + fraG(r.c.scad - mondo.t) + '. Caricalo su un viaggio dalla schermata Viaggi.' : r.motivo, 5000); aggiornaContr(true); aggiornaFirm(true); }; });
 }
 // ---- contratti firmati
-const STATI_F = { firmato: 'da caricare', caricato: 'caricato, il viaggio non è ancora partito', 'in viaggio': 'in viaggio', consegnato: 'consegnato', scaduto: 'decaduto (penale pagata)', annullato: 'annullato' };
-const liberoSu = (p, c) => p.stato === 'prenotata' && p.orig === c.orig && p.dest === c.dest && (p.capacita - mondo.caricoUsato(p)) >= c.carico;
+const STATI_F = { assegnato: 'assegnato a un viaggio: caricalo prima della partenza o si annulla all\'istante', 'a deriva': 'a deriva con la nave persa (carico recuperabile in futuro)', 'a bordo': 'a bordo di una nave, in attesa del viaggio successivo', firmato: 'da caricare', caricato: 'caricato, il viaggio non è ancora partito', 'in viaggio': 'in viaggio', consegnato: 'consegnato', scaduto: 'decaduto (penale pagata)', annullato: 'annullato' };
+const liberoSu = (p, c) => p.stato === 'prenotata' && p.orig === c.orig && (p.capacita - mondo.pesoStiva(p) - mondo.assegnatiPeso(p)) >= c.carico;          // basta che il viaggio parta dal porto del contratto: se arriva altrove e' una tappa
 function aggiornaFirm(forza) {
   const aperti = mondo.aperti(), chiusi = mondo.firmati.filter(f => !aperti.includes(f)).slice(-3).reverse();
   $('nfirm').textContent = '(' + aperti.length + '/' + CT.MAX_FIRMATI + ')'; if (schermoAperto !== 'contratti' && !forza) return;
-  const sig = mondo.firmati.map(f => f.id + f.stato + (f.pren || '')).join('|') + '|' + Math.floor(mondo.t) + '|' + mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('');
+  const sig = mondo.firmati.map(f => f.id + f.stato + (f.pren || '') + (mondo.t > f.c.scad ? 'r' : '')).join('|') + '|' + mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('');
   if (sig === sigFirm && !forza) return; sigFirm = sig;
-  const card = (f, chiuso) => { const c = f.c, rit = Math.ceil(mondo.t - c.scad), pv = f.pren && mondo.pren.find(p => p.id === f.pren);
-    const nota = f.stato === 'firmato' || f.stato === 'caricato' ? (rit > 0 ? ` · <span class="warn">scaduto da ${rit} g: −2% al giorno</span>` : '') : '';
+  const card = (f, chiuso) => { const c = f.c, D = mondo.durataContratto(f), L = Math.ceil(mondo.t - c.scad), pv = f.pren && mondo.pren.find(p => p.id === f.pren);
+    const nota = ['firmato', 'assegnato', 'caricato', 'a bordo', 'a deriva', 'in viaggio'].includes(f.stato) && L > 0 ? ` · <span class="warn">${margine(c.scad, mondo.t, D).txt}</span>` : '';
     let az = '';
+    const annulla = `<br><button data-a="${f.id}" style="background:#16202b;border-color:#27455f">Annulla il contratto (penale 10%: ${cr(c.pay * CT.PENALE_ANNULLO)})</button>`;
     if (f.stato === 'firmato') { const opz = mondo.pren.filter(p => liberoSu(p, c));
-      az = (opz.length ? opz.map(p => { const arr = p.tDep + p.tof, m = margine(c.scad, arr); return `<button data-c="${f.id}" data-v="${p.id}">Carica su ${O.FLOTTA[p.nave].nome} (parte ${fraG(p.tDep - mondo.t)}, arriva ${fraG(arr - mondo.t)}: ${m.txt})</button>`; }).join('<br>')
-        : `<div class="small">Nessun viaggio prenotato su questa rotta con spazio per ${c.carico} t.</div><button data-p="${f.id}">Pianifica un viaggio per questa rotta</button>`)
-        + `<br><button data-a="${f.id}" style="background:#16202b;border-color:#27455f">Annulla il contratto (penale ${cr(c.pay * CT.PENALE_ANNULLO)})</button>`; }
+      az = (opz.length ? opz.map(p => { const arr = p.tDep + p.tof, m = margine(c.scad, arr, D), tap = p.dest !== c.dest, et = `${O.FLOTTA[p.nave].nome} (parte ${fraS(p.tDep)}, arriva a ${nomeCorpo(p.dest)} ${fraS(arr)}${tap ? ': TAPPA, poi serve un altro viaggio' : ': ' + m.txt})`; return `<button data-c="${f.id}" data-v="${p.id}">Carica su ${et}</button> <button data-g="${f.id}" data-v="${p.id}">Assegna</button>`; }).join('<br>')
+        : `<div class="small">Nessun viaggio prenotato da ${nomeCorpo(c.orig)} con spazio per ${c.carico} t.</div><button data-p="${f.id}">Pianifica un viaggio per questa rotta</button>`) + annulla; }
+    else if (f.stato === 'assegnato') az = `<div class="warn small">Se il razzo parte senza il carico: annullamento istantaneo, penale ${cr(c.pay * CT.PENALE_ANNULLO)}.</div><button data-c="${f.id}" data-v="${f.pren}">Carica ora</button> <button data-l="${f.id}">Libera</button>` + annulla;
+    else if (f.stato === 'caricato' && pv && pv.stato === 'prenotata' && !(pv.carichi || []).find(q => q.cid === f.id && q.eredita)) az = annulla.replace('<br>', '');
     return `<div class="contr ${chiuso ? 'fine' : ''}"><div class="t"><b>${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)}</b> · ${c.carico} t di ${c.merce.toLowerCase()} · compenso ${cr(c.pay)}</div>
-      <div class="s">consegna entro <b>${fraG(c.scad - mondo.t)}</b> ${dtp(c.scad)}<br>${STATI_F[f.stato]}${f.stato === 'consegnato' ? ': ' + cr(f.incasso) : ''}${pv ? ' · su ' + O.FLOTTA[pv.nave].nome : ''}${nota}</div>${az}</div>`; };
+      <div class="s">consegna entro <b>${fraS(c.scad)}</b> ${dtp(c.scad)}<br>${STATI_F[f.stato]}${f.stato === 'consegnato' ? ': ' + cr(f.incasso) : ''}${pv ? ' · su ' + O.FLOTTA[pv.nave].nome : ''}${nota}</div>${az}</div>`; };
   $('listaFirm').innerHTML = aperti.length || chiusi.length ? aperti.map(f => card(f, false)).join('') + chiusi.map(f => card(f, true)).join('') : 'Nessun contratto firmato. Firmane uno dalla schermata Porto.';
-  $('listaFirm').querySelectorAll('button[data-v]').forEach(b => { b.onclick = () => { if (confirm('Il carico è definitivo: il contratto resterà legato a questo viaggio. Procedo?')) { const r = mondo.carica(+b.dataset.v, [b.dataset.c]); toast(r.ok ? 'Caricato.' : r.motivo, 4000); aggiornaFirm(true); aggiornaDettaglio(true); } }; });
+  $('listaFirm').querySelectorAll('button[data-g]').forEach(b => { b.onclick = () => { const r = mondo.assegna(b.dataset.g, +b.dataset.v); toast(r.ok ? 'Contratto assegnato al viaggio: caricalo prima della partenza, altrimenti si annulla (10%).' : r.motivo, 5000); aggiornaFirm(true); aggiornaDettaglio(true); }; });
+  $('listaFirm').querySelectorAll('button[data-l]').forEach(b => { b.onclick = () => { mondo.disassegna(b.dataset.l); aggiornaFirm(true); aggiornaDettaglio(true); }; });
+  $('listaFirm').querySelectorAll('button[data-v][data-c]').forEach(b => { b.onclick = () => { { const r = mondo.carica(+b.dataset.v, [b.dataset.c]); toast(r.ok ? 'Caricato: il contratto è legato al viaggio.' : r.motivo, 4000); aggiornaFirm(true); aggiornaDettaglio(true); } }; });
   $('listaFirm').querySelectorAll('button[data-p]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.p); apriPian({ orig: f.c.orig, dest: f.c.dest, cid: f.id }); }; });
-  $('listaFirm').querySelectorAll('button[data-a]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.a); if (confirm('Annullare il contratto? Si paga una penale di ' + cr(f.c.pay * CT.PENALE_ANNULLO) + '.')) { mondo.annullaContratto(f.id); aggiornaContr(true); aggiornaFirm(true); } }; });
+  $('listaFirm').querySelectorAll('button[data-a]').forEach(b => { b.onclick = () => { const f = mondo.firmati.find(x => x.id === b.dataset.a); conferma('Annullare il contratto? Nessun compenso e penale del 10% (' + cr(f.c.pay * CT.PENALE_ANNULLO) + ').', () => { const r = mondo.annullaContratto(f.id); if (!r.ok) toast(r.motivo, 4000); aggiornaContr(true); aggiornaFirm(true); aggiornaDettaglio(true); }); }; });
+}
+// ---- propellente di un viaggio: serve / serbatoio / residuo
+function propRiga(p) {
+  const sv = serb(p.nave), N = O.FLOTTA[p.nave];
+  if (p.propNec === undefined) return 'propellente: dato non disponibile (viaggio iniziato prima del rifornimento)';
+  if (p.stato === 'prenotata') { const ok = sv.carb + 1e-9 >= p.propNec; return ok ? `propellente: servono ${f1(p.propNec, 1)} t, nel serbatoio ${f1(sv.carb, 1)}/${sv.cap} t (all'arrivo ${f1(sv.carb - p.propNec, 1)} t)` : `<span class="warn">propellente insufficiente: servono ${f1(p.propNec, 1)} t, nel serbatoio ${f1(sv.carb, 1)} t. Fai rifornimento dal Porto o il razzo andrà perso.</span>`; }
+  return `propellente rimasto: ${f1(p.propResiduo === undefined ? sv.carb : p.propResiduo, 1)}/${sv.cap} t${p.persaT !== undefined ? ' · <span class="warn">serbatoio esaurito prima dell\'arrivo</span>' : ''}`;
 }
 // ---- viaggio selezionato: carico e contratti
 function aggiornaDettaglio(forza) {
@@ -1180,59 +1504,89 @@ function aggiornaDettaglio(forza) {
   const sig = p ? p.id + p.stato + mondo.caricoUsato(p) + '|' + [...caricaSel].join(',') + '|' + mondo.firmati.map(f => f.id + f.stato).join(',') + '|' + Math.floor(mondo.t) : 'x';
   if (sig === sigDett && !forza) return; sigDett = sig;
   if (!p) { box.innerHTML = '<div class="small" style="margin:8px 0">Seleziona un viaggio dall\'elenco per vedere il carico e collegarlo ai contratti.</div>'; return; }
-  const N = O.FLOTTA[p.nave], usato = mondo.caricoUsato(p), cap = p.capacita === Infinity ? N.carico : p.capacita, arr = p.tDep + p.tof;
-  const stato = { prenotata: 'prenotato, parte ' + fraG(p.tDep - mondo.t), 'in volo': 'in volo, arriva ' + fraG(arr - mondo.t), 'in orbita': 'in orbita, attende l\'attracco' }[p.stato] || p.stato;
-  let h = `<div class="contr"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${stato} ${dtp(p.tDep)} → ${dtp(arr)} · durata ${Math.round(p.tof)} g · propellente ${cr(p.costoProp || 0)}${p.pagato ? ' (pagato)' : ''}</div>
+  const N = O.FLOTTA[p.nave], usato = mondo.pesoStiva(p), cap = p.capacita === Infinity ? N.carico : p.capacita, arr = p.tDep + p.tof;
+  const stato = { prenotata: 'prenotato, parte ' + fraS(p.tDep), 'in volo': 'in volo, arriva ' + fraS(arr), 'in orbita': 'in orbita, attende l\'attracco' }[p.stato] || p.stato;
+  let h = `<div class="contr"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${stato} ${dtp(p.tDep)} → ${dtp(arr)} · durata ${Math.round(p.tof)} g</div>
+    <div class="s">${propRiga(p)}</div>
     <div class="s" style="margin-top:6px">CARICO A BORDO: <b>${usato} t su ${cap} t</b></div><div class="bar"><div style="width:${Math.min(100, usato / cap * 100)}%"></div></div>`;
-  h += (p.carichi || []).length ? p.carichi.map(k => { const m = margine(k.scad, arr), cp = CT.compenso(k.pay, arr, k.scad); return `<div class="s">• ${k.carico} t di ${k.merce.toLowerCase()} (${k.cid}) · scadenza ${fraG(k.scad - mondo.t)} ${dtp(k.scad)} · <span class="${m.cls}">${m.txt}</span> → compenso previsto ${cr(cp.importo)}</div>`; }).join('') : '<div class="s">Nessun contratto caricato: il viaggio partirebbe a vuoto.</div>';
+  h += (p.carichi || []).length ? p.carichi.map(k => { const m = margine(k.scad, arr, DK(k)), cp = CT.compenso(k.pay, arr, k.scad, DK(k)), tap = k.dest !== undefined && k.dest !== p.dest; return `<div class="s">• ${k.carico} t di ${k.merce.toLowerCase()} per ${nomeCorpo(k.dest || p.dest)} (${k.cid}) · scadenza ${fraS(k.scad)} ${dtp(k.scad)} · ${tap ? '<span class="warn">tappa intermedia: consegna al viaggio successivo da ' + nomeCorpo(p.dest) + '</span>' : '<span class="' + m.cls + '">' + m.txt + '</span> → compenso previsto ' + cr(cp.importo) + (cp.penale ? ' · penale ' + cr(cp.penale) : '')}${k.eredita ? ' · già a bordo' : ''}</div>`; }).join('') : '<div class="s">Nessun contratto caricato: il viaggio partirebbe a vuoto.</div>';
   if (p.stato === 'prenotata') {
-    const el = mondo.firmati.filter(f => f.stato === 'firmato' && f.c.orig === p.orig && f.c.dest === p.dest);
-    h += '<div class="t" style="margin-top:8px">Carica contratti firmati su questa rotta</div>';
-    if (!el.length) h += '<div class="s">Nessun contratto firmato su questa rotta. Firmane uno dalla schermata Porto (origine ' + nomeCorpo(p.orig) + ').</div>';
+    const el = mondo.firmati.filter(f => (f.stato === 'firmato' || (f.stato === 'assegnato' && f.pren === p.id)) && f.c.orig === p.orig);
+    h += '<div class="t" style="margin-top:8px">Carica contratti firmati che partono da ' + nomeCorpo(p.orig) + '</div>';
+    if (!el.length) h += '<div class="s">Nessun contratto firmato da ' + nomeCorpo(p.orig) + '. Firmane uno dalla schermata Porto.</div>';
     else { let tt = usato; for (const f of el) if (caricaSel.has(f.id)) tt += f.c.carico;
-      h += el.map(f => { const c = f.c, sp = caricaSel.has(f.id), non = !sp && tt + c.carico > cap, m = margine(c.scad, arr), cp = CT.compenso(c.pay, arr, c.scad);
-        return `<label class="chk"><input type="checkbox" data-c="${f.id}" ${sp ? 'checked' : ''} ${non ? 'disabled' : ''}><span>${c.carico} t di ${c.merce.toLowerCase()} · scadenza ${fraG(c.scad - mondo.t)} ${dtp(c.scad)} · arrivo ${fraG(arr - mondo.t)}: <span class="${m.cls}">${m.txt}</span> → ${cr(cp.importo)}${non ? ' · non c\'è posto' : ''}</span></label>`; }).join('')
+      h += el.map(f => { const c = f.c, sp = caricaSel.has(f.id), non = !sp && tt + c.carico > cap, m = margine(c.scad, arr, mondo.durataContratto(f)), cp = CT.compenso(c.pay, arr, c.scad, mondo.durataContratto(f)), tap = p.dest !== c.dest, asg = f.stato === 'assegnato';
+        return `<label class="chk"><input type="checkbox" data-c="${f.id}" ${sp ? 'checked' : ''} ${non ? 'disabled' : ''}><span>${asg ? '<b class="warn">ASSEGNATO</b>' + (sp ? '' : ' <span class="warn">(non spuntato: se il razzo parte si annulla, penale ' + cr(c.pay * CT.PENALE_ANNULLO) + ')</span>') + ' · ' : ''}${c.carico} t di ${c.merce.toLowerCase()} per <b>${nomeCorpo(c.dest)}</b> · scadenza ${fraS(c.scad)} ${dtp(c.scad)} · ${tap ? '<span class="warn">TAPPA: questo viaggio arriva a ' + nomeCorpo(p.dest) + ', la consegna finale richiede un altro viaggio da lì</span>' : 'arrivo ' + fraS(arr) + ': <span class="' + m.cls + '">' + m.txt + '</span> → ' + cr(cp.importo)}${non ? ' · non c\'è posto' : ''}</span></label>`; }).join('')
         + `<div class="s">Selezionati: ${[...caricaSel].length} · carico totale ${tt} t su ${cap} t</div><button id="btnCarica" class="go" ${caricaSel.size ? '' : 'disabled'}>Carica i selezionati (definitivo)</button>`; }
   }
   box.innerHTML = h + '</div>';
   box.querySelectorAll('input[data-c]').forEach(i => { i.onchange = () => { if (i.checked) caricaSel.add(i.dataset.c); else caricaSel.delete(i.dataset.c); aggiornaDettaglio(true); }; });
-  const bc = $('btnCarica'); if (bc) bc.onclick = () => { if (confirm('Il carico è definitivo: i contratti restano legati a questo viaggio e non si può più annullarlo. Procedo?')) { const r = mondo.carica(p.id, [...caricaSel]); caricaSel = new Set(); toast(r.ok ? 'Carico completato: ' + r.tot + ' t a bordo.' : r.motivo, 5000); aggiornaDettaglio(true); aggiornaLista(true); } };
+  const bc = $('btnCarica'); if (bc) bc.onclick = () => { { const r = mondo.carica(p.id, [...caricaSel]); caricaSel = new Set(); toast(r.ok ? 'Carico completato: ' + r.tot + ' t a bordo.' : r.motivo, 5000); aggiornaDettaglio(true); aggiornaLista(true); } };
 }
 let sigDett = '';
+// ---- magazzino (stock) del porto selezionato
+let sigSt = '';
+function aggiornaStock(forza) {
+  const sig = portoContr + JSON.stringify(mondo.stock) + Object.values(O.FLOTTA).map(n => mondo.propriaPeso(n.id)).join(','); if (sig === sigSt && !forza) return; sigSt = sig;
+  const s = mondo.stock[portoContr] || {}, righe = Object.keys(s).filter(m => s[m].t > 1e-9), usato = mondo.stockUsato(portoContr), tot = mondo.stockTotale();
+  $('stockBox').innerHTML = `<div>Stock di ${nomeCorpo(portoContr)}: <b>${f1(usato, 1)} / ${Tempo.STOCK_CAP} t</b> · affitto ${Tempo.STOCK_AFFITTO} cr per tonnellata e per giorno (addebitato ogni ${Tempo.GIORNI_INT} giorni su quanto stocchi) · in tutti i porti: ${f1(tot, 1)} t</div><div class="bar"><div style="width:${Math.min(100, usato / Tempo.STOCK_CAP * 100)}%"></div></div>`
+    + (righe.length ? '<table class="mov"><tr><th>materiale</th><th class="n">quantità</th></tr>' + righe.map(m => `<tr><td>${s[m].merce}</td><td class="n">${f1(s[m].t, 1)} t</td></tr>`).join('') + '</table>' : '<div>Nessuna merce stoccata qui. Il magazzino accoglie la merce che diventa tua (ad esempio quando un contratto scade con il carico a bordo).</div>');
+}
+// ---- rifornimento (Porto)
+let sigRf = '';
+function aggiornaRiforn(forza) {
+  const sig = Object.values(O.FLOTTA).map(n => serb(n.id).carb + (serb(n.id).persa ? 'x' : '')).join('|') + '|' + Math.round(mondo.saldo) + '|' + mondo.attivi().map(p => p.id + p.stato).join(','); if (sig === sigRf && !forza) return; sigRf = sig;
+  $('rifornBox').innerHTML = '<table class="mov"><tr><th>nave</th><th>motore</th><th>serbatoio</th><th class="n">prezzo</th><th></th></tr>' + Object.values(O.FLOTTA).map(n => { const sv = serb(n.id), pz = prezzoProp(n), manca = sv.cap - sv.carb, scient = !!sv.porto && O.tipoPorto(sv.porto) === 'scientifico', pr = mondo.attivi().find(p => p.nave === n.id && p.stato === 'prenotata' && p.propNec !== undefined);
+    if (sv.persa) return `<tr><td><b>${n.nome}</b></td><td colspan="4"><span class="warn">PERSA con il carico</span></td></tr>`;
+    return `<tr><td><b>${n.nome}</b><br><span class="small">${sv.porto ? nomeCorpo(sv.porto) : '—'}</span></td><td>${O.MOTORI[n.motore].nome.toLowerCase()}</td><td style="min-width:150px">${f1(sv.carb, 1)} / ${sv.cap} t<div class="bar"><div style="width:${sv.carb / sv.cap * 100}%;${pr && sv.carb < pr.propNec ? 'background:#ff6a6a' : ''}"></div></div>${pr ? `<span class="s ${sv.carb < pr.propNec ? 'warn' : ''}">viaggio prenotato: servono ${f1(pr.propNec, 1)} t</span>` : ''}</td><td class="n">${pz} cr/t</td>
+      <td>${scient ? '<span class="warn small">stazione scientifica: nessun rifornimento (serve un trasferimento da un\'altra nave)</span>' : ''}<button data-n="${n.id}" data-t="5" ${manca < 0.05 || scient ? 'disabled' : ''}>+5 t (${cr(Math.min(5, manca) * pz)})</button> <button data-n="${n.id}" data-t="${manca}" ${manca < 0.05 || scient ? 'disabled' : ''}>Pieno (${cr(manca * pz)})</button></td></tr>`; }).join('') + '</table>';
+  $('rifornBox').querySelectorAll('button[data-n]').forEach(b => { b.onclick = () => { const N = O.FLOTTA[b.dataset.n], r = mondo.rifornisci(N.id, +b.dataset.t, prezzoProp(N)); toast(r.ok ? 'Rifornimento: +' + f1(r.t, 1) + ' t a ' + N.nome + ' (' + cr(r.costo) + ').' : r.motivo, 4000); aggiornaRiforn(true); aggiornaNavi(); if (sel) mostraPiano(); }; });
+}
 // ---- flotta
 function aggiornaFlotta(forza) {
-  const sig = mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('|') + Math.floor(mondo.t); if (sig === sigFl && !forza) return; sigFl = sig;
-  $('flottaBox').innerHTML = '<table class="mov"><tr><th>nave</th><th>classe</th><th>motore</th><th class="n">carico</th><th class="n">serbatoio</th><th>stato</th></tr>' + Object.values(O.FLOTTA).map(n => {
-    const p = mondo.attivi().find(x => x.nave === n.id), st = p ? `${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)} · ${p.stato === 'prenotata' ? 'parte ' + fraG(p.tDep - mondo.t) : p.stato === 'in volo' ? 'arriva ' + fraG(p.tDep + p.tof - mondo.t) : 'in orbita'} · a bordo ${mondo.caricoUsato(p)}/${p.capacita === Infinity ? n.carico : p.capacita} t` : '<span class="ok">libera</span>';
-    return `<tr><td><b>${n.nome}</b></td><td>${n.classe}</td><td>${O.MOTORI[n.motore].nome.toLowerCase()}</td><td class="n">${n.carico} t</td><td class="n">${n.serbatoio} t</td><td>${st}</td></tr>`; }).join('') + '</table><div class="small" style="margin-top:8px">Valori provvisori. La posizione delle navi non è ancora simulata: si assume che la nave sia nel porto di partenza.</div>';
+  const sig = mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)).join('|') + Object.values(O.FLOTTA).map(n => serb(n.id).carb + '/' + mondo.propriaPeso(n.id)).join(',') + mondo.relitti.length + mondo.firmati.map(f => f.stato).join(''); if (sig === sigFl && !forza) return; sigFl = sig;
+  $('flottaBox').innerHTML = '<table class="mov"><tr><th>nave</th><th>classe</th><th>motore</th><th class="n">carico</th><th>serbatoio</th><th>stato</th></tr>' + Object.values(O.FLOTTA).map(n => {
+    const sv = serb(n.id), coda = mondo.attivi().filter(x => x.nave === n.id).sort((a, b) => a.tDep - b.tDep), ab = mondo.firmati.filter(f => f.stato === 'a bordo' && f.nave === n.id), p = mondo.attivi().find(x => x.nave === n.id), st = sv.persa ? '<span class="warn">PERSA</span>' : p ? `${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)} · ${p.stato === 'prenotata' ? 'parte ' + fraS(p.tDep) : p.stato === 'in volo' ? 'arriva ' + fraS(p.tDep + p.tof) : 'in orbita'} · a bordo ${mondo.caricoUsato(p)}/${p.capacita === Infinity ? n.carico : p.capacita} t` : '<span class="ok">libera</span>';
+    return `<tr><td><b>${n.nome}</b></td><td>${n.classe}</td><td>${O.MOTORI[n.motore].nome.toLowerCase()}</td><td class="n">${n.carico} t</td><td style="min-width:110px">${f1(sv.carb, 1)} / ${n.serbatoio} t<div class="bar"><div style="width:${sv.carb / n.serbatoio * 100}%"></div></div></td><td>${st}${coda.length > 1 ? '<br><span class="small">catena: ' + coda.map(q => nomeCorpo(q.orig) + ' → ' + nomeCorpo(q.dest) + ' (' + fraS(q.tDep) + ')').join(' · ') + '</span>' : ''}${!sv.persa && !p && sv.porto ? (O.tipoPorto(sv.porto) === 'scientifico' ? ' · parcheggiata alla stazione scientifica di ' : ' · ormeggiata a ') + nomeCorpo(sv.porto) : ''}${ab.length ? '<br><span class="warn">a bordo: ' + ab.map(f => f.c.carico + ' t per ' + nomeCorpo(f.c.dest)).join(', ') + ' (tappa)</span>' : ''}${mondo.propriaPeso(n.id) ? '<br><span class="warn">merce propria a bordo: ' + f1(mondo.propriaPeso(n.id), 1) + ' t (si scarica nello stock quando c\'è posto)</span>' : ''}</td></tr>`; }).join('') + '</table>' + (mondo.relitti.length ? '<h2>NAVI PERSE NELLO SPAZIO</h2>' + mondo.relitti.map(rl => `<div class="contr"><div class="t"><b>${O.FLOTTA[rl.nave].nome}</b> · ${nomeCorpo(rl.orig)} → ${nomeCorpo(rl.dest)} · alla deriva dal ${gg(rl.t)}</div><div class="s">carico: ${rl.carichi.length ? rl.carichi.map(k => k.carico + ' t di ' + k.merce.toLowerCase() + (k.scaduto ? ' (ormai tua)' : '')).join(', ') : 'nessuno'}<br>Il recupero (radiofaro e missione di soccorso) arriverà in futuro: la nave e il carico restano registrati.</div></div>`).join('') : '') + '<div class="small" style="margin-top:8px">Valori provvisori. La posizione delle navi non è ancora simulata: si assume che la nave sia nel porto di partenza. Il rifornimento si fa dalla schermata Porto.</div>';
 }
 let sigFl = '';
+// ---- avvisi di sistema (notifiche del browser): si chiedono solo se il giocatore lo vuole, mai in automatico
+function aggiornaAvvisiSis() {
+  const el = $('avvisiSis'), st = window.Notification ? Notification.permission : 'assente', sig = st; if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+  const msg = { granted: 'Attivi: quando la scheda è nascosta ricevi un avviso di sistema prima di partenze e arrivi.', denied: 'Bloccati dal browser: per attivarli abilita le notifiche di questo sito dalle impostazioni del browser.', default: 'Non attivi. Se vuoi un avviso di sistema quando la scheda è nascosta, attivali (il browser ti chiederà il permesso una sola volta).', assente: 'Non disponibili in questo browser.' }[st];
+  el.innerHTML = '<div class="t">AVVISI DI SISTEMA</div><div class="s">' + msg + '</div>' + (st === 'default' ? '<button id="attivaAvvisi">Attiva gli avvisi di sistema</button>' : '');
+  const b = $('attivaAvvisi'); if (b) b.onclick = () => { const fatto = () => { el.dataset.sig = ''; aggiornaAvvisiSis(); }; try { const r = Notification.requestPermission(fatto); if (r && r.then) r.then(fatto); } catch (e) {} };
+}
 // ---- ufficio: conti e movimenti
 function aggiornaUfficio(forza) {
-  aggiornaBanca();
+  aggiornaBanca(); aggiornaAvvisiSis();
   const sig = mondo.movimenti.length + '|' + Math.round(mondo.saldo) + '|' + Math.floor(mondo.t); if (sig === sigUff && !forza) return; sigUff = sig;
   const m = mondo.movimenti.slice().reverse().slice(0, 80);
-  $('movim').innerHTML = m.length ? '<table class="mov"><tr><th>quando</th><th>voce</th><th class="n">importo</th><th class="n">saldo</th></tr>' + m.map(x => `<tr><td>${fraG(x.t - mondo.t)} ${dtp(x.t)}</td><td>${x.desc}</td><td class="n ${x.imp >= 0 ? 'pos' : 'neg'}">${x.imp >= 0 ? '+' : ''}${cr(x.imp)}</td><td class="n">${cr(x.saldo)}</td></tr>`).join('') + '</table>' : 'Nessun movimento ancora.';
+  $('movim').innerHTML = m.length ? '<table class="mov"><tr><th>quando</th><th>voce</th><th class="n">importo</th><th class="n">saldo</th></tr>' + m.map(x => `<tr><td>${fraS(x.t)} ${dtp(x.t)}</td><td>${x.desc}</td><td class="n ${x.imp >= 0 ? 'pos' : 'neg'}">${x.imp >= 0 ? '+' : ''}${cr(x.imp)}</td><td class="n">${cr(x.saldo)}</td></tr>`).join('') + '</table>' : 'Nessun movimento ancora.';
 }
 let sigUff = '';
 function aggiornaBanca() {
   const prossimo = mondo.prossimoInt - mondo.t, interesse = Math.round(mondo.debito * Tempo.TASSO);
   $('bSaldo').textContent = cr(mondo.saldo); $('bSaldo').style.color = mondo.saldo < 0 ? '#ff6a6a' : '#fff';
-  $('bDebito').innerHTML = 'Debito <b>' + cr(mondo.debito) + '</b> (iniziale: prestito di ' + cr(Tempo.SALDO0) + ') · interesse ' + cr(interesse) + ' ogni ' + Tempo.GIORNI_INT + ' giorni · prossimo ' + fraG(prossimo) + ' ' + dtp(mondo.prossimoInt);
-  $('bPrest').disabled = mondo.debito + Tempo.PREST > Tempo.MAX_DEBITO; $('bRimb').disabled = mondo.debito <= 0 || mondo.saldo < Math.min(Tempo.PREST, mondo.debito);
+  $('bDebito').innerHTML = mondo.debito <= 0 ? 'Nessun debito: nessun interesse da pagare.' : 'Debito <b>' + cr(mondo.debito) + '</b> (iniziale: prestito di ' + cr(Tempo.SALDO0) + ') · interesse ' + cr(interesse) + ' ogni ' + Tempo.GIORNI_INT + ' giorni · prossimo ' + fraG(prossimo) + ' ' + dtp(mondo.prossimoInt);
+  $('bPrest').disabled = mondo.prestiti >= Tempo.MAX_PRESTITI; $('bPrest').textContent = mondo.prestiti >= Tempo.MAX_PRESTITI ? 'Prestiti esauriti (10 su 10)' : 'Prendi un prestito (+' + cr(Tempo.PREST) + ') · ' + (Tempo.MAX_PRESTITI - mondo.prestiti) + ' rimasti su ' + Tempo.MAX_PRESTITI; $('bRimb').disabled = mondo.debito <= 0 || mondo.saldo < Math.min(Tempo.PREST, mondo.debito);
 }
 $('bPrest').onclick = () => { if (mondo.prestito()) toast('Prestito concesso: +' + cr(Tempo.PREST) + '. Pagherai interessi ogni ' + Tempo.GIORNI_INT + ' giorni.', 5000); aggiornaUfficio(true); };
 $('bRimb').onclick = () => { if (mondo.rimborsa()) toast('Rimborsati ' + cr(Tempo.PREST) + ' di debito.', 3500); aggiornaUfficio(true); };
 // ---- riepilogo nel pannello destro
 let sigRiass = '';
 function aggiornaRiass() {
-  const att = mondo.attivi(), aperti = mondo.aperti().slice().sort((a, b) => a.c.scad - b.c.scad);
-  const sig = [Math.round(mondo.saldo), mondo.debito, Math.floor(mondo.t), viaggioSel, ...mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)), ...mondo.firmati.map(f => f.id + f.stato)].join('|'); if (sig === sigRiass) return; sigRiass = sig;
+  const veloce = mondo.velUtente() > 1.5, att = mondo.attivi(), aperti = mondo.aperti().slice().sort((a, b) => a.c.scad - b.c.scad);
+  const sig = [Math.round(mondo.saldo), mondo.debito, veloce, viaggioSel, mondo.t > 0 ? mondo.firmati.map(f => mondo.t > f.c.scad ? 'r' : '').join('') : '', Object.values(O.FLOTTA).map(n => serb(n.id).carb).join(','), ...mondo.pren.map(p => p.id + p.stato + mondo.caricoUsato(p)), ...mondo.firmati.map(f => f.id + f.stato)].join('|'); if (sig === sigRiass) return; sigRiass = sig;
   const prossimo = mondo.prossimoInt - mondo.t, interesse = Math.round(mondo.debito * Tempo.TASSO);
-  let h = `<div class="riass" data-s="ufficio"><div class="t">SALDO <b style="color:${mondo.saldo < 0 ? '#ff6a6a' : '#fff'}">${cr(mondo.saldo)}</b></div><div class="s">debito ${cr(mondo.debito)} · interessi ${cr(interesse)} ${fraG(prossimo)}</div></div>`;
-  h += `<h2>VIAGGI <span class="small">(${att.length}/${Tempo.MAXPREN})</span></h2>` + (att.length ? att.map(p => { const N = O.FLOTTA[p.nave], cap = p.capacita === Infinity ? N.carico : p.capacita, ev = p.stato === 'prenotata' ? 'parte ' + fraG(p.tDep - mondo.t) : p.stato === 'in volo' ? 'arriva ' + fraG(p.tDep + p.tof - mondo.t) : 'in orbita';
-    return `<div class="riass ${p.id === viaggioSel ? 'sel' : ''}" data-v="${p.id}" style="${p.id === viaggioSel ? 'border-color:#7fe7ff' : ''}"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${ev} · carico ${mondo.caricoUsato(p)}/${cap} t${mondo.caricoUsato(p) ? '' : ' (vuoto)'}</div></div>`; }).join('') : '<div class="small">Nessun viaggio.</div>');
-  h += `<h2>CONTRATTI <span class="small">(${aperti.length}/${CT.MAX_FIRMATI})</span></h2>` + (aperti.length ? aperti.map(f => { const c = f.c, rit = mondo.t > c.scad; return `<div class="riass" data-s="contratti"><div class="t">${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)} · ${c.carico} t</div><div class="s">scade ${fraG(c.scad - mondo.t)} · ${rit ? '<span class="warn">in ritardo</span> · ' : ''}${STATI_F[f.stato]}</div></div>`; }).join('') : '<div class="small">Nessun contratto firmato.</div>');
+  const netto = mondo.saldo - mondo.debito, prog = Math.max(0, Math.min(1, netto / Tempo.OBIETTIVO)), fatto = !!mondo.fine;
+  let h = `<div class="riass" data-s="ufficio"><div class="t">OBIETTIVO · giorno <b class="gd">${Math.floor(mondo.giorniDallAvvio())}</b>${fatto ? ' · <span class="ok">RAGGIUNTO</span>' : mondo.gameOver ? ' · <span class="warn">GAME OVER</span>' : ''}</div><div class="s">${cr(Tempo.OBIETTIVO)} senza debiti, nel minor tempo possibile</div><div class="bar"><div style="width:${prog * 100}%"></div></div><div class="s">${mondo.saldo >= Tempo.OBIETTIVO && mondo.debito > 0 ? '<span class="warn">Hai i crediti: rimborsa il debito per vincere.</span>' : 'saldo ' + cr(mondo.saldo) + (mondo.debito > 0 ? ' · debito ' + cr(mondo.debito) + ' · netto ' + cr(netto) : ' · nessun debito')}</div></div>
+  <div class="riass" data-s="ufficio"><div class="t">SALDO <b style="color:${mondo.saldo < 0 ? '#ff6a6a' : '#fff'}">${cr(mondo.saldo)}</b></div><div class="s">${mondo.debito <= 0 ? 'nessun debito' : 'debito ' + cr(mondo.debito) + ' · interessi ' + cr(interesse) + ' ' + fraS(mondo.prossimoInt)}</div></div>`;
+  h += `<h2>VIAGGI <span class="small">(${att.length}/${Tempo.MAXPREN})</span></h2>` + (att.length ? att.map(p => { const N = O.FLOTTA[p.nave], cap = p.capacita === Infinity ? N.carico : p.capacita, arr = p.tDep + p.tof, vu = Math.max(1, mondo.velUtente()), sv = serb(p.nave);
+    const reale = d => realeS(mondo.t + d), poco = p.stato === 'prenotata' && p.propNec !== undefined && sv.carb + 1e-9 < p.propNec;
+    const ev = p.stato === 'prenotata' ? `parte ${fraS(p.tDep)} ${dtp(p.tDep)}<br>arriva <b>${fraS(arr)}</b> ${dtp(arr)}` : p.stato === 'in volo' ? `arriva <b>${fraS(arr)}</b> ${dtp(arr)}` : 'in orbita, attende l\'attracco';
+    return `<div class="riass ${p.id === viaggioSel ? 'sel' : ''}" data-v="${p.id}" style="${p.id === viaggioSel ? 'border-color:#7fe7ff' : ''}"><div class="t"><b>${N.nome}</b> · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${ev}${veloce && p.stato !== 'in orbita' ? '<div class="fr-line">' + realeS(arr) + '</div>' : '<br>'}carico ${mondo.caricoUsato(p)}/${cap} t${mondo.caricoUsato(p) ? '' : ' (vuoto)'} · serbatoio ${f1(sv.carb, 1)}/${sv.cap} t${poco ? ' <span class="warn">⚠ insufficiente</span>' : ''}</div></div>`; }).join('') : '<div class="small">Nessun viaggio.</div>');
+  h += `<h2>CONTRATTI <span class="small">(${aperti.length}/${CT.MAX_FIRMATI})</span></h2>` + (aperti.length ? aperti.map(f => { const c = f.c, rit = mondo.t > c.scad; return `<div class="riass" data-s="contratti"><div class="t">${nomeCorpo(c.orig)} → ${nomeCorpo(c.dest)} · ${c.carico} t</div><div class="s">scade ${fraS(c.scad)} · ${rit ? '<span class="warn">in ritardo</span> · ' : ''}${STATI_F[f.stato]}</div></div>`; }).join('') : '<div class="small">Nessun contratto firmato.</div>');
   $('riass').innerHTML = h;
   $('riass').querySelectorAll('[data-s]').forEach(el => { el.onclick = () => apriSchermo(el.dataset.s); });
   $('riass').querySelectorAll('[data-v]').forEach(el => { el.onclick = () => { viaggioSel = +el.dataset.v; caricaSel = new Set(); apriSchermo('viaggi'); aggiornaLista(true); sigRiass = ''; }; });
@@ -1240,7 +1594,7 @@ function aggiornaRiass() {
 // ---- elenco dei viaggi prenotati
 let sigPren = '';
 function aggiornaLista(forza) {
-  const att = mondo.attivi(), chiusi = mondo.pren.filter(p => !att.includes(p)).slice(-3).reverse();
+  const att = mondo.attivi(), chiusi = [];
   const sig = mondo.pren.map(p => p.id + p.stato + p.dep.stato + p.arr.stato + mondo.caricoUsato(p)).join('|');
   $('npren').textContent = '(' + att.length + '/' + Tempo.MAXPREN + ')';
   if (sig !== sigPren || forza) {
@@ -1250,7 +1604,7 @@ function aggiornaLista(forza) {
       + chiusi.map(p => `<div class="pren fine"><div class="t">${O.FLOTTA[p.nave].nome} · ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)}</div><div class="s">${{ conclusa: 'conclusa', mancata: 'lancio mancato · finestra persa', annullata: 'annullata' }[p.stato] || p.stato}</div></div>`).join('');
     box.querySelectorAll('.pren[id^=pr]').forEach(el => { el.onclick = e => { if (e.target.tagName !== 'BUTTON') selezionaViaggio(+el.id.slice(2)); }; });
     box.querySelectorAll('button[id^=pb]').forEach(b => { b.onclick = () => { mondo.premi(+b.dataset.p, b.dataset.a); aggiornaLista(true); }; });
-    box.querySelectorAll('button[id^=pa]').forEach(b => { b.onclick = () => { if (confirm('Annullare la prenotazione? Può avere una penale provvisoria.')) { const r = mondo.annulla(+b.dataset.p); toast(r.ok ? 'Prenotazione annullata' + (r.penale ? ' (penale provvisoria ' + r.penale + ' cr)' : ' senza penale') + '.' : 'Non si può annullare ora.'); aggiornaNavi(); aggiornaLista(true); } }; });
+    box.querySelectorAll('button[id^=pa]').forEach(b => { b.onclick = () => { conferma('Annullare la prenotazione? Può avere una penale provvisoria.', () => { const r = mondo.annulla(+b.dataset.p); toast(r.ok ? 'Prenotazione annullata' + (r.penale ? ' (penale provvisoria ' + r.penale + ' cr)' : ' senza penale') + '.' : 'Non si può annullare ora.'); aggiornaNavi(); aggiornaLista(true); }); }; });
   }
   const vu = mondo.velUtente(); if (viaggioSel !== null && !att.some(p => p.id === viaggioSel)) viaggioSel = null;
   for (const p of att) {
@@ -1264,22 +1618,65 @@ function aggiornaLista(forza) {
 }
 // ---- avviso in primo piano
 let ultimoSec = -1, lampeggio = 0;
+function dettagliBanner(p, ap) {
+  const arr = p.tDep + p.tof, N = O.FLOTTA[p.nave], sv = serb(p.nave), cap = p.capacita === Infinity ? N.carico : p.capacita, nc = (p.carichi || []).length;
+  let d = `<div><b>Viaggio</b>: ${nomeCorpo(p.orig)} → ${nomeCorpo(p.dest)} · ${N.nome} · durata ${Math.round(p.tof)} g · arrivo ${fraG(arr - t)} ${dtp(arr)}</div>`;
+  if (ap.tipo === 'partenza') {
+    d += `<div><b>Carico</b>: ${mondo.caricoUsato(p)}/${cap} t${nc ? '' : ' · a vuoto'}</div>` + (p.carichi || []).map(k => { const m = margine(k.scad, arr, DK(k)); return `<div>• ${k.carico} t di ${k.merce.toLowerCase()} · scadenza ${fraG(k.scad - t)} ${dtp(k.scad)} · <span class="${m.cls}">${m.txt}</span> · compenso previsto ${cr(CT.compenso(k.pay, arr, k.scad, DK(k)).importo)}</div>`; }).join('');
+    const nonCar = mondo.firmati.filter(f => f.stato === 'assegnato' && f.pren === p.id); if (nonCar.length) d += `<div class="warn"><b>ATTENZIONE</b>: ${nonCar.length} contratti assegnati non caricati (${nonCar.reduce((a, f) => a + f.c.carico, 0)} t): se il razzo parte si annullano all'istante, penale ${cr(nonCar.reduce((a, f) => a + f.c.pay * CT.PENALE_ANNULLO, 0))}.</div>`;
+    if (p.propNec !== undefined) { const ok = sv.carb + 1e-9 >= p.propNec; d += ok ? `<div><b>Propellente</b>: servono ${f1(p.propNec, 1)} t, nel serbatoio ${f1(sv.carb, 1)}/${sv.cap} t · all'arrivo ${f1(sv.carb - p.propNec, 1)} t</div>` : `<div class="warn"><b>Propellente INSUFFICIENTE</b>: servono ${f1(p.propNec, 1)} t, ci sono ${f1(sv.carb, 1)} t: il razzo e il carico andranno persi a metà viaggio.</div>`; }
+    d += `<div class="small">Se non confermi: ${Tempo.PENALI.ritardoAlSecondo} cr per ogni secondo di ritardo; dopo ${Tempo.RIT} s la partenza è mancata (${cr(Tempo.PENALI.partenzaMancata)}).</div>`;
+  } else {
+    d += `<div><b>Consegna</b>: ${mondo.caricoUsato(p)} t${nc ? '' : ' (viaggio a vuoto)'}</div>`; let tot = 0;
+    d += (p.carichi || []).map(k => { const m = margine(k.scad, ap.tEv, DK(k)), cp = CT.compenso(k.pay, ap.tEv, k.scad, DK(k)); tot += cp.importo - cp.penale; return `<div>• ${k.carico} t di ${k.merce.toLowerCase()} · scadenza ${dtp(k.scad)} · <span class="${m.cls}">${m.txt}</span> → ${cr(cp.importo)}</div>`; }).join('');
+    if (nc) d += `<div><b>Compensi previsti</b>: ${cr(tot)}</div>`;
+    d += `<div><b>Propellente all'arrivo</b>: ${f1(p.propResiduo === undefined ? sv.carb : p.propResiduo, 1)}/${sv.cap} t</div><div class="small">Se non confermi: ${Tempo.PENALI.ritardoAlSecondo} cr/s di ritardo; dopo ${Tempo.RIT} s l'arrivo è mancato e la nave attende in orbita (${cr(Tempo.PENALI.arrivoMancato)}).</div>`;
+  }
+  return d;
+}
+// Logo di Space Truckers per la scheda del browser (stesso linguaggio della mappa: stazione con due pannelli su un'orbita, linee sottili ciano). Con l'avviso: puntino ambra fisso.
+const favLink = document.createElement('link'); favLink.rel = 'icon'; favLink.type = 'image/png'; document.head.appendChild(favLink); let favStato = null;
+function logoGioco(avviso) {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#05070d'; g.beginPath(); g.moveTo(10, 2); g.arcTo(62, 2, 62, 62, 10); g.arcTo(62, 62, 2, 62, 10); g.arcTo(2, 62, 2, 2, 10); g.arcTo(2, 2, 62, 2, 10); g.fill();
+  g.strokeStyle = '#7fe7ff'; g.lineCap = 'round'; g.lineWidth = 2.5; g.globalAlpha = 0.55; g.beginPath(); g.ellipse(32, 34, 25, 11, -0.45, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1;
+  g.lineWidth = 3.5; g.beginPath(); g.moveTo(32, 20); g.lineTo(44, 32); g.lineTo(32, 44); g.lineTo(20, 32); g.closePath(); g.stroke();
+  g.lineWidth = 3; g.beginPath(); g.moveTo(5, 32); g.lineTo(18, 32); g.moveTo(46, 32); g.lineTo(59, 32); g.stroke();
+  g.fillStyle = '#7fe7ff'; g.beginPath(); g.arc(32, 32, 3, 0, 7); g.fill();
+  if (avviso) { g.fillStyle = '#ffb347'; g.strokeStyle = '#05070d'; g.lineWidth = 3; g.beginPath(); g.arc(50, 14, 10, 0, 7); g.fill(); g.stroke(); }
+  return c.toDataURL('image/png');
+}
+function aggiornaFavicon(avviso) { avviso = !!avviso; if (avviso === favStato) return; favStato = avviso; favLink.href = logoGioco(avviso); }
+aggiornaFavicon(false);
+function elencoAvvisi() {                                                  // tutti gli appuntamenti in preavviso o in ritardo; prima quelli ancora da confermare, per urgenza
+  const L = []; for (const p of mondo.pren) for (const ap of [p.dep, p.arr]) if (ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo') && !(ap.tipo === 'partenza' && p.stato !== 'prenotata') && !(ap.tipo === 'arrivo' && p.stato !== 'in volo')) L.push({ p, ap, R: ap.stato === 'ritardo' ? -1 : (ap.tEv - t) * 86400 });
+  return L.sort((a, b) => ((a.ap.premuto && a.ap.stato !== 'ritardo') ? 1 : 0) - ((b.ap.premuto && b.ap.stato !== 'ritardo') ? 1 : 0) || a.R - b.R);
+}
+const secAvviso = x => x.ap.stato === 'ritardo' ? Math.max(0, Math.ceil(Tempo.RIT - (mondo.tr - x.ap.ritTr))) : Math.max(0, Math.ceil(Tempo.toGo(x.R, x.ap.vLock)));
+let sigAltri = '';
+function aggiornaAltriAvvisi(L) {
+  const alt = L.slice(1), sig = alt.map(x => x.p.id + x.ap.tipo + x.ap.stato + (x.ap.premuto ? 1 : 0)).join('|');
+  if (sig !== sigAltri) { sigAltri = sig; $('banAltri').innerHTML = alt.map(x => `<div class="banAlt ${x.ap.stato === 'ritardo' ? 'rit' : ''}" data-k="${x.p.id}${x.ap.tipo}"><span class="bt"><b>${x.ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO'}</b> · ${O.FLOTTA[x.p.nave].nome} · ${nomeCorpo(x.p.orig)} → ${nomeCorpo(x.p.dest)}${x.ap.premuto && x.ap.stato !== 'ritardo' ? ' · presenza confermata ✓' : ''}</span><span class="bc"></span>${x.ap.premuto && x.ap.stato !== 'ritardo' ? '' : `<button data-p="${x.p.id}" data-a="${x.ap.tipo}">${x.ap.tipo === 'partenza' ? 'Parti' : 'Completa'}</button>`}</div>`).join('');
+    $('banAltri').querySelectorAll('button').forEach(b => { b.onclick = () => { mondo.premi(+b.dataset.p, b.dataset.a); aggiornaLista(true); sigAltri = ''; }; }); }
+  $('banAltri').querySelectorAll('.banAlt').forEach((el, i) => { const x = alt[i]; if (!x) return; const c = el.querySelector('.bc'), tx = (x.ap.stato === 'ritardo' ? 'RITARDO ' : '') + secAvviso(x) + ' s'; if (c.textContent !== tx) c.textContent = tx; });
+}
 function aggiornaBanner() {
-  let urg = null, rem = 1e18;
-  for (const p of mondo.pren) for (const ap of [p.dep, p.arr]) if (ap && (ap.stato === 'preavviso' || ap.stato === 'ritardo') && !(ap.tipo === 'partenza' && p.stato !== 'prenotata') && !(ap.tipo === 'arrivo' && p.stato !== 'in volo')) { const R = ap.stato === 'ritardo' ? -1 : (ap.tEv - t) * 86400; if (R < rem) { rem = R; urg = [p, ap]; } }
-  const el = $('banner'); if (!urg) { el.hidden = true; if (document.title.startsWith('⚠')) document.title = 'Space Trucker - mappa e pianificatore (prototipo)'; ultimoSec = -1; return; }
+  const L = elencoAvvisi(), urg = L.length ? [L[0].p, L[0].ap] : null, rem = L.length ? L[0].R : 1e18;
+  const el = $('banner'); if (!urg) { el.hidden = true; aggiornaFavicon(false); ultimoSec = -1; sigAltri = ''; return; }
   const [p, ap] = urg, N = O.FLOTTA[p.nave].nome; el.hidden = false; el.className = ap.stato === 'ritardo' ? 'rit' : '';
-  $('banTit').textContent = (ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO') + ' · ' + N + ' · ' + nomeCorpo(p.orig) + ' → ' + nomeCorpo(p.dest);
+  $('banTit').textContent = (ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO') + ' · ' + N + ' · ' + nomeCorpo(p.orig) + ' → ' + nomeCorpo(p.dest) + (L.length > 1 ? '  (+' + (L.length - 1) + ' in arrivo)' : '');
   let sec, sub; if (ap.stato === 'ritardo') { sec = Math.max(0, Math.ceil(Tempo.RIT - (mondo.tr - ap.ritTr))); sub = 'IN RITARDO: ancora ' + sec + ' s prima di perdere ' + (ap.tipo === 'partenza' ? 'la finestra' : 'l\'appuntamento') + ' · penale provvisoria ' + Math.round((mondo.tr - ap.ritTr) * Tempo.PENALI.ritardoAlSecondo) + ' cr'; }
   else { sec = Math.max(0, Math.ceil(Tempo.toGo(rem, ap.vLock))); sub = ap.premuto ? 'Presenza confermata. Attendi lo zero.' : 'Premi il pulsante per confermare che ci sei.'; }
+  $('banDett').innerHTML = dettagliBanner(p, ap);
   $('banConto').textContent = sec; $('banSub').textContent = sub; const b = $('banBtn'); b.textContent = ap.tipo === 'partenza' ? 'Parti' : 'Completa missione'; b.disabled = !!ap.premuto && ap.stato !== 'ritardo'; b.onclick = () => { mondo.premi(p.id, ap.tipo); aggiornaLista(true); };
+  aggiornaAltriAvvisi(L);
   if (sec !== ultimoSec) { if (ap.stato === 'preavviso' && sec <= 10 && sec > 0) suono(660, 0.1, 0.1); ultimoSec = sec; }
-  document.title = ((Math.floor(performance.now() / 500) % 2) ? '⚠ ' : '') + (ap.tipo === 'partenza' ? 'PARTENZA' : 'ARRIVO') + ' tra ' + sec + ' s';
+  aggiornaFavicon(L.some(x => !x.ap.premuto || x.ap.stato === 'ritardo'));                      // segnale fisso nell'icona solo se c'e' un'azione da fare (partenza o arrivo)
 }
 // ---- HUD e barra della velocita'
 function aggiornaHud() {
   const v = mondo.velEffettiva(), vu = mondo.velUtente(), lim = mondo.forzato ? ' · tempo reale durante la pianificazione' : mondo.inPreavviso() ? ' · frenata del tempo' : (v < 0.97 * vu ? ' · rallentato per seguire le lune' : '');
-  $('hud').innerHTML = `${fmtTempo(t)}  <span class="small">(${etichettaVel(v)}${lim})</span><br><span class="small">* fase iniziale scelta dal gioco · ◎ = spazioporto · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
+  $('hud').innerHTML = `${fmtTempo(t)}  <span class="small">(${etichettaVel(v)}${lim})</span><br><span class="small">* fase iniziale scelta dal gioco · simbolo di stazione = porto (verde commerciale, ambra scientifico, vuoto = su satellite o in orbita) · dimensioni dei corpi e distanze delle lune ingrandite per leggibilità</span>`;
 }
 function aggiornaBarra() {
   const bloccata = mondo.forzato || mondo.inPreavviso(), v = mondo.velEffettiva();
@@ -1296,9 +1693,38 @@ function testoRegistro() {
   for (const e of ev) { const { tr, t: tg, tipo, ...r } = e; righe.push('[' + f1(tr / 60, 1) + ' min | ' + fmtTempo(tg).slice(0, 16) + '] ' + tipo + ' ' + Object.entries(r).map(([k, v]) => k + '=' + v).join(' ')); }
   return righe.join('\n');
 }
-$('regCopia').onclick = () => { const tx = testoRegistro(); const ok = () => toast('Registro copiato: incollalo in un messaggio per l\'autore.', 4000); if (navigator.clipboard) navigator.clipboard.writeText(tx).then(ok, () => window.prompt('Copia il registro:', tx)); else window.prompt('Copia il registro:', tx); };
-$('nuovaProva').onclick = () => { if (confirm('Azzerare la prova? Si perdono prenotazioni e registro.')) { try { localStorage.removeItem(CHIAVE); } catch (e) {} mondo.registra = () => {}; location.reload(); } };
+$('regCopia').onclick = () => { const tx = testoRegistro(); const ok = () => toast('Registro copiato: incollalo in un messaggio per l\'autore.', 4000); if (navigator.clipboard) navigator.clipboard.writeText(tx).then(ok, () => mostraTesto('REGISTRO DELLA SESSIONE (copia e incolla)', tx)); else mostraTesto('REGISTRO DELLA SESSIONE (copia e incolla)', tx); };
+$('nuovaProva').onclick = () => { conferma('Azzerare la prova? Si perdono prenotazioni e registro.', () => { try { localStorage.removeItem(CHIAVE); } catch (e) {} mondo.registra = () => {}; location.reload(); }); };
 $('regDet').addEventListener('toggle', () => { if ($('regDet').open) { $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); } });
+// ---- partita: schermata di avvio, record dei tester, fine
+let recordMappa = null;                                                                      // { min: giorni piu' bassi di tutti i test, n: partite concluse } (anonimo, dal foglio)
+function caricaRecordMappa(dopo) { if (!LOG_URL) return; fetch(LOG_URL + '?azione=recordmappa').then(r => r.json()).then(d => { if (d && typeof d === 'object') { recordMappa = d; if (dopo) dopo(); } }).catch(() => {}); }
+const giorniTxt = g => f1(g, 1) + ' giorni' + (g >= 700 ? ' (' + f1(g / 365.25, 1) + ' anni)' : '');
+function frasiRecord() { return recordMappa && typeof recordMappa.min === 'number' ? 'Record dei tester: <b>' + giorniTxt(recordMappa.min) + '</b> (su ' + recordMappa.n + ' partite concluse)' : 'Nessun record ancora: chi arriva primo lo stabilisce.'; }
+function schermataAvvio() {
+  const m = document.createElement('div'); m.id = 'modale'; m.dataset.avvio = '1';
+  const navi = Object.values(O.FLOTTA).map(n => '<tr><td><b>' + n.nome + '</b></td><td>' + n.classe + ', ' + O.MOTORI[n.motore].nome.toLowerCase() + '</td><td>' + nomeCorpo(PORTO_INIZIALE[n.id]) + '</td></tr>').join('');
+  m.innerHTML = '<div class="mb" style="max-width:560px"><div class="mt">SPACE TRUCKER · PROVA</div><div class="mc"><p style="margin:0 0 8px"><b>Obiettivo:</b> raggiungi <b>' + cr(Tempo.OBIETTIVO) + '</b> <b>senza debiti</b> nel minor tempo possibile.</p>'
+    + '<p style="margin:0 0 8px" class="small">Parti con ' + cr(Tempo.SALDO0) + ' presi in prestito (interessi ogni ' + Tempo.GIORNI_INT + ' giorni). Firma contratti nei porti, prenota i viaggi, carica la merce, consegnala entro la data. Il propellente è tuo: fai rifornimento prima di partire. Il tempo non si ferma e puoi accelerarlo dalla barra in basso.</p>'
+    + '<table class="mov"><tr><th>nave</th><th>classe</th><th>parte da</th></tr>' + navi + '</table><p id="recAvvio" class="small" style="margin:10px 0 0">' + frasiRecord() + '</p></div><div class="mx"><button class="go" id="btnAvvio" style="width:auto">AVVIO</button></div></div>';
+  document.body.appendChild(m);
+  $('btnAvvio').onclick = () => { mondo.avvia(); m.remove(); salva(); toast('Partita avviata: il tempo scorre. Buon viaggio!', 4000); };
+  caricaRecordMappa(() => { const e = $('recAvvio'); if (e) e.innerHTML = frasiRecord(); });
+}
+function schermataFine(f) {
+  const R = f.riep, nuovoRec = !recordMappa || typeof recordMappa.min !== 'number' || f.giorni < recordMappa.min, min = Math.floor(f.tReale / 60), sec = f.tReale % 60;
+  const righe = [['Giorni di gioco', giorniTxt(f.giorni)], ['Tempo reale', min + ' min ' + sec + ' s'], ['Viaggi completati', R.viaggi], ['Contratti consegnati', R.consegne + ' (' + f1(R.ton, 0) + ' t)'], ['Contratti firmati / annullati / scaduti', R.firmati + ' / ' + R.annullati + ' / ' + R.scaduti],
+    ['Compensi incassati', cr(R.compensi)], ['Penali pagate', cr(R.penali)], ['Interessi pagati', cr(R.interessi)], ['Carburante acquistato', cr(R.carburante)], ['Affitto dello stock', cr(R.affitto)], ['Navi perse', R.perse], ['Saldo finale', cr(f.saldo)]];
+  const corpo = '<div style="font-size:15px;margin-bottom:6px"><b class="ok">OBIETTIVO RAGGIUNTO</b> in <b>' + giorniTxt(f.giorni) + '</b></div><div class="small" style="margin-bottom:8px">' + (nuovoRec ? '<span class="ok">Nuovo record!</span> Nessuno ha fatto meglio.' : frasiRecord()) + '</div><table class="mov">' + righe.map(x => '<tr><td>' + x[0] + '</td><td class="n">' + x[1] + '</td></tr>').join('') + '</table>';
+  finestra('FINE PARTITA', corpo, [{ t: 'Nuova partita', fn: () => { try { localStorage.removeItem(CHIAVE); } catch (e) {} mondo.registra = () => {}; location.reload(); } }, { t: 'Guarda la mappa' }]);
+}
+$('btnTeschio').onclick = () => finestra('ABBANDONARE LA PARTITA?', 'Se non riesci a proseguire puoi dichiarare il GAME OVER: la partita finisce e potrai ricominciare dall\'inizio. Non conta nel record dei tester.<br><span class="small">Altrimenti riprendi da dove eri.</span>', [{ t: 'RIPRENDI' }, { t: 'GAME OVER', cls: 'rosso', fn: () => { mondo.gameOverManuale(); } }]);
+function schermataGameOver(g) {
+  const R = g.riep, min = Math.floor(g.tReale / 60), sec = g.tReale % 60;
+  const righe = [['Giorni di gioco', giorniTxt(g.giorni)], ['Tempo reale', min + ' min ' + sec + ' s'], ['Viaggi completati', R.viaggi], ['Contratti consegnati', R.consegne + ' (' + f1(R.ton, 0) + ' t)'], ['Compensi incassati', cr(R.compensi)], ['Penali pagate', cr(R.penali)], ['Interessi pagati', cr(R.interessi)], ['Carburante acquistato', cr(R.carburante)], ['Navi perse', R.perse], ['Saldo / debito', cr(g.saldo) + ' / ' + cr(g.debito)]];
+  finestra(g.manuale ? 'GAME OVER · PARTITA ABBANDONATA' : 'GAME OVER · DEBITI', (g.manuale ? '<div style="font-size:15px;margin-bottom:6px;color:#ff6a6a"><b>Hai abbandonato la partita.</b></div><div class="small" style="margin-bottom:8px">Puoi ricominciare dall\'inizio: il tempo e i conti ripartono dalle condizioni iniziali.</div>' : '<div style="font-size:15px;margin-bottom:6px;color:#ff6a6a"><b>Hai esaurito i prestiti e non puoi più muovere nessuna nave.</b></div><div class="small" style="margin-bottom:8px">Nessuna nave ha il propellente per partire su una rotta e non hai i crediti per comprarne, né prestiti da prendere (10 su 10). Il debito resta ' + cr(g.debito) + '.</div>') + '<table class="mov">' + righe.map(x => '<tr><td>' + x[0] + '</td><td class="n">' + x[1] + '</td></tr>').join('') + '</table>',
+    [{ t: 'Ricomincia dall\'inizio', fn: () => { try { localStorage.removeItem(CHIAVE); } catch (e) {} mondo.registra = () => {}; location.reload(); } }, { t: 'Guarda la mappa' }]);
+}
 // ---- salvataggio e rientro
 function salva() { try { localStorage.setItem(CHIAVE, JSON.stringify(mondo.serializza(Date.now()))); } catch (e) {} }
 addEventListener('pagehide', salva);
@@ -1307,8 +1733,11 @@ document.addEventListener('visibilitychange', () => { tick(); mondo.nascosta = d
   if (document.hidden) { mondo.registra('visibilita', { stato: 'nascosta', vel: Tempo.bucketVel(mondo.vel) }); salva(); } else mondo.registra('visibilita', { stato: 'visibile' }); });
 { let salvato = null; try { const x = localStorage.getItem(CHIAVE); if (x) salvato = JSON.parse(x); } catch (e) {}
   mondo.stat.inizioMs = Date.now();
-  if (salvato) { const inizio = salvato.stat && salvato.stat.inizioMs; mondo.ripristina(salvato, Date.now()); if (inizio) mondo.stat.inizioMs = inizio; mondo.registra('ripresa', { build: BUILD }); t = mondo.t; }
-  else mondo.registra('sessione_inizio', { build: BUILD }); }
+  if (salvato && !(isFinite(salvato.t) && isFinite(salvato.realMs) && Array.isArray(salvato.pren))) salvato = null;                 // salvataggio illeggibile: si riparte
+  if (salvato) { try { const inizio = salvato.stat && salvato.stat.inizioMs; mondo.ripristina(salvato, Date.now()); if (inizio) mondo.stat.inizioMs = inizio; mondo.registra('ripresa', { build: BUILD }); t = mondo.t; }
+    catch (er) { try { localStorage.removeItem(CHIAVE); } catch (e2) {} location.reload(); } }
+  else { mondo.avviato = false; mondo.registra('sessione_inizio', { build: BUILD }); }
+  if (!mondo.avviato) schermataAvvio(); else if (mondo.gameOver) setTimeout(() => schermataGameOver(mondo.gameOver), 400); else if (mondo.fine) { caricaRecordMappa(() => {}); setTimeout(() => schermataFine(mondo.fine), 400); } else caricaRecordMappa(); }
 // ======================================================================================================
 //  CALENDARIO DELLE FINESTRE: una riga per rotta, le finestre come barre, la linea "adesso"
 // ======================================================================================================
@@ -1351,13 +1780,14 @@ $('calcv').addEventListener('click', e => { if (!CAL.hit) return; const r = $('c
 // ======================================================================================================
 let ultimoMs = Date.now(), nSalva = 0;
 function tick() { const n = Date.now(), dt = (n - ultimoMs) / 1000; ultimoMs = n; if (dt > 0) mondo.avanza(dt); t = mondo.t; }
-function aggiornaUI() { aggiornaContr(false); aggiornaFirm(false); aggiornaRiass(); aggiornaSchermo(false); if (schermoAperto === 'ufficio') aggiornaBanca(); aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
+function aggiornaUI() { { const v = mondo.avviato && !mondo.fine && !mondo.gameOver; if ($('btnTeschio').hidden === v) $('btnTeschio').hidden = !v; } sincCsel(); aggiornaTempi(); mondo.forzato = !$('schermo').hidden && schermoAperto === 'viaggi' && !$('pianifica').hidden; aggiornaContr(false); aggiornaFirm(false); aggiornaRiass(); aggiornaSchermo(false); if (schermoAperto === 'ufficio') aggiornaBanca(); aggiornaLista(false); aggiornaBanner(); aggiornaBarra(); if ($('regDet').open && (nSalva % 30 === 0)) $('regTxt').textContent = testoRegistro().split('\n').slice(-40).join('\n'); }
 function frame(now) { tick(); aggiornaAnim(now); disegna(); aggiornaUI(); if (!$('cal').hidden) { passoCalendario(); disegnaCal(); } if (++nSalva % 60 === 0) salva(); requestAnimationFrame(frame); }
 // Scheda in secondo piano: il browser rallenta i timer della pagina (anche a 1 al minuto), e un tick distanziato oltre 2 s conterebbe come assenza.
 // Per questo il battito di 1 s arriva da un Web Worker, che il browser non rallenta; se non e' disponibile si ripiega sul timer normale.
 function battito() { if (document.hidden) { tick(); aggiornaUI(); salva(); } }
 (function () { let w = null, ripiego = () => { if (!ripiego.fatto) { ripiego.fatto = true; setInterval(battito, 1000); } };
-  try { w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},1000)'], { type: 'text/javascript' }))); w.onmessage = battito; w.onerror = ripiego; } catch (e) { ripiego(); } })();
+  try { if (location.protocol === 'file:') throw 0; w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},1000)'], { type: 'text/javascript' }))); w.onmessage = battito; w.onerror = ripiego; } catch (e) { ripiego(); } })();
 setInterval(posSlider, 60);
+['view', 'modoVista', 'aspetto', 'portoContr', 'orig', 'dest', 'nave'].forEach(id => daSelect($(id)));
 setView('interno'); aggiornaLista(true); requestAnimationFrame(frame);
 </script></body></html>
