@@ -1348,7 +1348,7 @@ function disegna() {
 // ======================================================================================================
 //  TEMPO, PRENOTAZIONI, APPUNTAMENTI, REGISTRO, SALVATAGGIO  (le regole sono in tempo.js)
 // ======================================================================================================
-const CHIAVE = 'st_mappa_stato_v1', INVIO_ATTIVO = true, LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';   // in locale non invia mai (vedi inviaEvento)
+const CHIAVE = 'st_mappa_stato_v2', INVIO_ATTIVO = true, LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';   // in locale non invia mai (vedi inviaEvento)
 const SESSIONE = Math.random().toString(36).slice(2, 10);
 const trajCache = new Map();
 // Punti di una traiettoria alla risoluzione che serve a questo zoom (un punto ogni ~4 px), costruiti a pezzi di pochi ms per fotogramma:
