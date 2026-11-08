@@ -991,8 +991,13 @@ BLOCCA: tempo
 BLOCCA: rot
 BLOCCA: stab
 BLOCCA: flip
+SE NON prua
+  CAPO: Ti rigiro io, con calma: la prua torna avanti.
+  GIRA
+  ATTENDI: flip
+FINE
 STABILE
-CAPO: Ti rimetto in rotta: velocità 1, stabilizzatore acceso. Comandi spenti, ti prego di non toccare niente.
+CAPO: Velocità 1, stabilizzatore acceso. Comandi spenti, ti prego di non toccare niente.
 CAPO: Adesso il pezzo più importante: la spinta!
 EVIDENZIA: spinta
 CAPO: Vedi la nostra orbita? Adesso è un cerchio perfetto attorno alla Terra.
@@ -1183,10 +1188,16 @@ SE NON quotaOk
   FINE
 FINE
 CAPO: Quel grande cerchio tratteggiato attorno alla Luna è la sua sfera d'influenza: là dentro comanda lei, fuori comanda la Terra.
-CAPO: Da qui in poi il tempo lo gestisci tu. Ti sblocco tutte le velocità. Puoi stare a 0 e andare a prenderti un caffè per giorni, o andare a 3 e arrivare in pochi secondi.
+CAPO: Da qui in poi il tempo lo gestisci tu. Ti sblocco tutte le velocità, e anche lo stabilizzatore (tasto P). Puoi stare a 0 e andare a prenderti un caffè per giorni, o andare a 3 e arrivare in pochi secondi.
 CAPO: Decidi tu. Basta che arrivi.
 SBLOCCA: tempo
+SBLOCCA: stab
 ATTENDI: inSOI
+# se in crociera non hai usato lo stabilizzatore, la nave si mette in rotta da sola prima dell'arrivo
+SE NON stab
+  CAPO: Siamo alla Luna. Ti allineo io la nave, prima di cominciare.
+  STABILE
+FINE
 VAI: soi
 
 
@@ -1241,23 +1252,13 @@ TEMPO: 0
 ORBITA: 1
 PAUSA: 2
 SALVA: soi
-CAPO: Ho fermato il tempo: sei entrato nella sfera d'influenza della Luna.
-CAPO: Vedi che l'inquadratura si è allargata? Adesso si vede bene la Luna e le sue orbite di parcheggio.
-CAPO: Il cerchio verde pieno è la tua orbita di parcheggio. Ci sono orbite di parcheggio alternative: per oggi ignorale.
-CAPO: La linea tratteggiata è dove passerai, e il pallino ti dice a che quota: "qui passi a tot chilometri dalla Luna".
-CAPO: Quota giusta. Merito mio, ovviamente. Dillo in giro.
+CAPO: Ho messo tempo 0: sei entrato nella sfera d'influenza della Luna.
+CAPO: Vedi che l'inquadratura si è allargata? Adesso si vede la Luna. Il cerchio verde pieno è la tua orbita di parcheggio.
+CAPO: Approccio perfetto. Merito mio, ovviamente.
 CAPO: Il problema è un altro: arrivi a più di due chilometri al secondo.
 CAPO: A quella velocità la Luna non ti prende. Ti guarda passare e saluta con la manina.
-CAPO: Non mi credi? Guarda cosa succede se non freni.
-TEMPO: 2
-ATTENDI: allontana
-PAUSA: 2
-CAPO: Visto? Dritto e via, senza nemmeno salutare. Peccato, avevi pagato il parcheggio.
-TEMPO: 0
-CARICA: soi
-PAUSA: 1
-CAPO: Riavvolto. Per restare qui bisogna rallentare, e si rallenta spingendo contro il moto.
-CAPO: Quindi la prua deve guardare indietro: il flip, ricordi? 
+CAPO: Per restare qui bisogna rallentare, devi spingere in direzione opposta a dove stai andando.
+CAPO: Quindi la prua deve guardare indietro: ti viene in mente una manovra per farlo?
 CAPO: Il momento giusto per frenare è quando sei più vicino alla Luna: lì il freno rende di più.
 CAPO: Frenare presto è come inchiodare in autostrada: ti ritrovi nel posto sbagliato, e male.
 
@@ -1273,8 +1274,9 @@ ATTENDI: altKm<=14000
 TEMPO: 1
 ATTENDI: periMin<=40
 TEMPO: 0
-CAPO: Fermo. Ci siamo quasi. Prima la prua: premi la barra spaziatrice.
+CAPO: Fermo. Ci siamo quasi. Prima la prua.
 SBLOCCA: flip
+CONTO: GIRA! Premi SPAZIO
 ATTENDI: flip | Spazio, recluta. La barra lunga. | Il flip gira la nave di mezzo giro. Provalo.
 BLOCCA: flip
 CAPO: Ecco: la prua guarda indietro, da qui la spinta frena.
@@ -1630,7 +1632,7 @@ function tutAvanza() {
   }
 }
 function tutStabile() {                                                  // nave di nuovo stabile: tempo 1, stabilizzatore acceso, prua lungo il moto, nessuna rotazione
-  tempoIdx = 1; stab = true; flip = null; const d0 = dominante(), rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * TEMPI[1].v; S.psi = Math.atan2(d0.vy, d0.vx); wNave = rr; rateUlt = rr; warpUlt = 0;
+  tempoIdx = 1; stab = true; flip = null; const d0 = dominante(), rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * TEMPI[1].v; S.psi = dirMoto(); wNave = rr; rateUlt = rr; warpUlt = 0;
 }
 function tutLog(esito) {
   if (!tut || tut.loggato) return; tut.loggato = true; const q = x => Math.round(x * 10) / 10;
@@ -1662,7 +1664,7 @@ function tutAtomo(a) {
       : nome === 'raKm' ? (legataLuna(el) ? Math.round(el.ra - T.R_M) : 99999) : nome === 'rpKm' ? (legataLuna(el) ? Math.round(el.rp - T.R_M) : 0) : nome === 'altKm' ? Math.round(el.d - T.R_M) : 0;
     return m[2] === '>=' ? v >= n : m[2] === '<=' ? v <= n : m[2] === '>' ? v > n : m[2] === '<' ? v < n : v === n; }
   switch (a) { case 'anticipo': return f.anticipo; case 'aiutato': return f.aiuti > 0; case 'lento': return f.attesa > 30; case 'stabOn': return stab; case 'veloce': return tempoIdx >= 2; case 'rotOk': return tut.rotOk; case 'spento': return tut.spento;
-    case 'tempo3': return new Set([...pr.map(x => x.d), tempoIdx]).size >= 3; case 'tre': return pr.some(x => x.d === 3); case 'su1': return tempoIdx === 1; case 'rot': return tut.rotOk; case 'stab': return tut.sbloc.has('stab') && stab && ledBloccato; case 'inFin': return S.dvUsato < 0.05 && mod2pi(betaNave() - inizioSpinta()) < (DV_TLI / sim.P.acc) * (nTerra() - T.N_M); case 'spingo': return spingendo; case 'prua': { const d0 = dominante(); return Math.cos(S.psi - Math.atan2(d0.vy, d0.vx)) > 0; }
+    case 'tempo3': return new Set([...pr.map(x => x.d), tempoIdx]).size >= 3; case 'tre': return pr.some(x => x.d === 3); case 'su1': return tempoIdx === 1; case 'rot': return tut.rotOk; case 'stab': return tut.sbloc.has('stab') && stab && ledBloccato; case 'inFin': return S.dvUsato < 0.05 && mod2pi(betaNave() - inizioSpinta()) < (DV_TLI / sim.P.acc) * (nTerra() - T.N_M); case 'spingo': return spingendo; case 'prua': { return Math.cos(S.psi - dirMoto()) > 0; }
     case 'inSOI': { const m = sim.luna(); return S.dvUsato > 0.5 && Math.hypot(S.x - m.x, S.y - m.y) < T.SOI_M; }
     case 'traiPreciso': return !!prev && prev.fine === 'periluna' && prev.dMin - T.R_M >= 100 && prev.dMin - T.R_M <= 3500;
     case 'traiOk': case 'traiSchianto': case 'traiPoca': case 'traiTroppa': return tutTrai() === a;
@@ -1686,7 +1688,7 @@ function tutPasso() {
   if (!tut || tut.fine) return; const now = performance.now(); tut.visti.add(tempoIdx); if (tempoIdx !== 1) tut.t1 = 0; else if (!tut.t1) tut.t1 = now;
   const rg = tut.riga; if (rg && !rg.bip && snd.pronto) { rg.bip = true; const resto = rg.testo.length * 25 - (now - rg.t0); if (resto > 60) tutBlip(resto, rg.chi === 'TU'); }   // capo e giocatore (con un suono diverso), anche la prima battuta appena l'audio e' acceso
   if (tut.sbloc.has('rot')) { const wr = Math.abs(stab ? wNave - rateUlt : wNave); if (wr > 0.3) tut.rotOk = true; } if (flip !== null) tut.flipVisto = true;
-  if (tut.sbloc.has('rot')) { const d0 = dominante(), er = Math.abs(ang(Math.atan2(d0.vy, d0.vx) - S.psi));       // prua entro 15 gradi dalla direzione di moto (dove la terrebbe lo stabilizzatore); un'uscita sotto mezzo secondo si tollera
+  if (tut.sbloc.has('rot')) { const d0 = dominante(), er = Math.abs(ang(dirMoto() - S.psi));       // prua entro 15 gradi dalla direzione di moto (dove la terrebbe lo stabilizzatore); un'uscita sotto mezzo secondo si tollera
     if (er < 0.2618) { if (!tut.allT) tut.allT = now; tut.allFuori = 0; } else if (tut.allT) { if (!tut.allFuori) tut.allFuori = now; if (now - tut.allFuori > 500) { tut.allT = 0; tut.allFuori = 0; } } } else { tut.allT = 0; tut.allFuori = 0; }
   if (!tut.sbloc.has('spinta')) tasti.KeyW = tasti.ArrowUp = false;                                  // la spinta e' del giocatore solo quando il capo la sblocca
   if (tut.forza) { const f = tut.forza;                                                              // il capo preme i tasti al posto tuo
@@ -1735,7 +1737,7 @@ const T = Transito, cv = document.getElementById('c'), ctx = cv.getContext('2d')
 const COL = Aspetto.COL, snd = Suoni.crea();
 const DV_TLI = 1.75, TEMPI = [{ v: 1, k: 0 }, { v: 600, k: 1 }, { v: 10800, k: 2 }, { v: 86400, k: 3 }], TEMPO_INI = 1, ORB = [{ n: 'Ellittica 300 × 5.000 km', rp: 300, ra: 5000 }, { n: 'Bassa circolare 300 km', rp: 300, ra: 300 }, { n: 'Alta circolare 2.000 km', rp: 2000, ra: 2000 }], TOLRP = 200, tolRa = o => Math.max(200, 0.1 * o.ra), TEMPO_SPINTA = 60, ACC = 0.002, AGG_MS = 6000, ALFA = 0.9, WMAX = 1.2;
 let W = 0, H = 0, PANEL = 280, AW = 0; function ridim() { const d = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; PANEL = Math.max(230, Math.min(300, Math.round(W * 0.3))); AW = W; /* la scena occupa tutto lo schermo: PANEL e' solo la larghezza del pannello dati a scomparsa (Tab) */ cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); } addEventListener('resize', ridim); ridim();
-let inizio = false, intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, boom = null, tut = null, tSenza = 0, barraTocco = -1e9, barraA = 0, warpUlt = 0, stab = true, datiAperti = false, spintaT = -1e9, ledBloccato = false, tlackT = -1e9, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
+let inizio = false, intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, boom = null, tut = null, tSenza = 0, barraTocco = -1e9, barraA = 0, warpUlt = 0, stab = true, tgPrec = null, datiAperti = false, spintaT = -1e9, ledBloccato = false, tlackT = -1e9, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
 const ROT_K = 0.002;   // km: (raggio d'inerzia^2 / braccio) = 2,5^2 / 3 m. Ogni variazione di rotazione dOmega (rad/s) costa ROT_K * |dOmega| km/s di propellente, a mano o con lo stabilizzatore
 const LED_ENTRA = 0.07, LED_ESCE = 0.15, LED_LENTO = 0.45;   // rad/s: soglia per cadere nello zero, soglia per uscirne, massima velocita' di variazione (rad/s^2) per essere catturato
 const MAG_ROT = Aspetto.creaMagnete(LED_ENTRA, LED_ESCE, LED_LENTO);   // la rotazione ha un magnete sullo zero: vale in tutto il gioco, non solo nel tutorial
@@ -1744,7 +1746,7 @@ const mod2pi = x => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), ang = d
 const betaNave = () => mod2pi(Math.atan2(S.y, S.x) - sim.luna().a), nTerra = () => sim.v0 / sim.P.r0;
 const inizioSpinta = () => mod2pi(fase0.beta - 0.5 * (DV_TLI / sim.P.acc) * (nTerra() - T.N_M));
 // ---- raccolta dati anonimi dei test (stesso foglio del docking: nessun IP, nessun cookie, solo un codice casuale per sessione)
-const VERSION = 'T0.2';
+const VERSION = 'T0.3';
 const LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';
 const LOCALE = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);           // in locale non si invia nulla (salvo ?log=1)
 const LOG_ON = !!LOG_URL && (!LOCALE || new URLSearchParams(location.search).get('log') === '1'), SESSIONE = Math.random().toString(36).slice(2, 10);
@@ -1784,6 +1786,7 @@ cv.addEventListener('mousedown', e => { snd.init(); if (inizio) { avviaTutorial(
   rTempo.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY) && (!tutAttivo() || tutPermesso('Digit' + i))) { tempoIdx = i; if (tutAttivo()) tutTasto('Digit' + i); } }); if (!tutAttivo()) rOrb.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY)) selOrb = i; }); });
 cv.addEventListener('mousemove', e => { if (tutAttivo() && tut.scelte) rScelte.forEach((r, i) => { if (e.offsetX >= r.x && e.offsetX <= r.x + r.w && e.offsetY >= r.y && e.offsetY <= r.y + r.h) tut.sel = i; }); });
 // ---- direzione "avanti" rispetto al corpo dominante (Terra, o Luna dentro la zona di cattura)
+function dirMoto() { const m = sim.luna(), d = dominante(); if (d.rx !== S.x || d.ry !== S.y) return Math.atan2(d.vy, d.vx); const w = (m.x * m.vy - m.y * m.vx) / (m.x * m.x + m.y * m.y); return Math.atan2(S.vy - w * S.x, S.vx + w * S.y); }   // direzione del moto come si vede sullo schermo: lontano dalla Terra la vista ruota con la Luna
 function dominante() { const m = sim.luna(), dm = Math.hypot(S.x - m.x, S.y - m.y); return dm < T.SOI_M ? { vx: S.vx - m.vx, vy: S.vy - m.vy, rx: S.x - m.x, ry: S.y - m.y } : { vx: S.vx, vy: S.vy, rx: S.x, ry: S.y }; }
 // ---- ciclo
 let ultimo = performance.now();
@@ -1803,9 +1806,11 @@ function passo(dtR) {
   if (agg) { stepAgg(dtR * TEMPI[tempoIdx].v); spingendo = false; tqUlt = 0; return; }
   const k = c => !!(tasti[c]), sx = k('KeyA') || k('ArrowLeft'), dx = k('KeyD') || k('ArrowRight');
   let tq = 0, spesaW = 0; const verso = (tg, rate = 0) => { const er = ang(tg - S.psi); if (Math.abs(er) < 0.004 && Math.abs(wNave - rate) < 0.02) { spesaW += Math.abs(wNave - rate); S.psi = tg; wNave = rate; return null; } const wd = rate + Math.sign(er) * Math.min(WMAX, Math.sqrt(2 * ALFA * 0.8 * Math.abs(er)), Math.abs(er) / 0.4); return Math.max(-ALFA, Math.min(ALFA, (wd - wNave) / Math.max(dtR, 1e-3))); };
+  if (!stab || sx || dx || flip !== null) tgPrec = null;
   if (sx || dx) { flip = null; stab = false; rateUlt = 0; tq = ((sx ? 1 : 0) - (dx ? 1 : 0)) * ALFA; }
   else if (flip !== null) { rateUlt = 0; const q = verso(flip); if (q === null) flip = null; else tq = q; }
-  else if (stab) { const d0 = dominante(), tg = Math.atan2(d0.vy, d0.vx), warp = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito ? Math.min(TEMPO_SPINTA, TEMPI[tempoIdx].v) : TEMPI[tempoIdx].v, rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * warp;   // velocita' con cui il moto ruota, in secondi REALI
+  else if (stab) { let d0 = dominante(), tg = dirMoto(), warp = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito ? Math.min(TEMPO_SPINTA, TEMPI[tempoIdx].v) : TEMPI[tempoIdx].v, rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * warp;   // velocita' con cui il moto ruota, in secondi REALI
+    const fuoriSOI = d0.rx === S.x && d0.ry === S.y, tgP = tgPrec; tgPrec = tg; if (fuoriSOI && tgP !== null && dtR > 0.001 && warp === warpUlt) rr = ang(tg - tgP) / dtR;   // lontano dalla Terra la rotta sullo schermo (vista che ruota con la Luna) e' quella nel sistema rotante
     const cambioTempo = warp !== warpUlt; warpUlt = warp;                                      // al cambio di scala del tempo la rotazione richiesta cambia di colpo: la nave si riallinea senza getti
     if (Math.abs(rr) > 0.8 * WMAX) { S.psi = tg; wNave = 0; rateUlt = 0; }                       // tempo molto accelerato: lo stabilizzatore tiene la nave allineata al moto
     else if (cambioTempo) { S.psi = tg; wNave = rr; rateUlt = rr; }
