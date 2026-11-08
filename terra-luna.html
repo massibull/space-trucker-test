@@ -62,12 +62,12 @@ canvas{display:block;width:100vw;height:100vh}
       if (!best) return null; for (let b = best.beta - 1; b <= best.beta + 1; b += 0.01) { const q = prova(b * Math.PI / 180); if (q.fine !== 'periluna') continue; const score = Math.abs(q.dMin - (R_M + altTarget)); if (score < best.score) best = { beta: b, score, dMin: q.dMin }; }
       return { beta: best.beta * Math.PI / 180, dMin: best.dMin }; }
     // correzione di rotta: il dv minore (km/s) e la direzione (rad) che portano il passaggio vicino alla Luna a una quota fra altMin e altMax
-    function correzione(altMin = 150, altMax = 1200) {
+    function correzione(altMin = 150, altMax = 1200, dvMax = 0.15, nDir = 16) {
       const base = previsione(9 * 86400, 1e9, undefined, { fermaPeri: true }), buono = q => q.fine === 'periluna' && q.dMin - R_M >= altMin && q.dMin - R_M <= altMax;
       if (buono(base)) return { serve: false, dv: 0, dir: S.psi, alt: base.dMin - R_M };
       let migliore = null; const th = Math.atan2(S.vy, S.vx);
-      for (let k = 0; k < 16; k++) { const dir = th + k * Math.PI / 8;
-        for (let dv = 0.002; dv <= 0.15; dv += 0.002) { const s = Object.assign({}, S); s.vx += Math.cos(dir) * dv; s.vy += Math.sin(dir) * dv; const q = previsione(9 * 86400, 1e9, s, { fermaPeri: true });
+      for (let k = 0; k < nDir; k++) { const dir = th + k * 2 * Math.PI / nDir;
+        for (let dv = 0.002; dv <= dvMax; dv += dvMax > 0.15 ? 0.004 : 0.002) { const s = Object.assign({}, S); s.vx += Math.cos(dir) * dv; s.vy += Math.sin(dir) * dv; const q = previsione(9 * 86400, 1e9, s, { fermaPeri: true });
           if (buono(q)) { if (!migliore || dv < migliore.dv) migliore = { serve: true, dv, dir, alt: q.dMin - R_M }; break; } } }
       return migliore || { serve: true, dv: null, dir: S.psi, alt: base.dMin - R_M }; }
     // velocita' (km/s) alla distanza d dal centro lunare, da cui un'orbita ha apoluna raCentro
@@ -394,7 +394,7 @@ function crea() {
       if (!acceso && SND.amb) { SND.amb.stop(); SND.amb = null; }
       if (SND.amb && Math.abs(tensione - SND.tens) > 0.02) { SND.tens = tensione; SND.amb.set(tensione); } } catch (e) {}
   }
-  return { init, ferma, toggle, play, motore, getti, sottofondo, get attivo() { return attivo; },
+  return { init, ferma, toggle, play, motore, getti, sottofondo, get attivo() { return attivo; }, get pronto() { return attivo && !!SND.ctx; },
     urto: i => play((c, o, t) => suonoUrto(c, o, t, i), 0, 1.4), distruzione: () => play((c, o, t) => suonoDistruzione(c, o, t)),
     aggancio: perfetto => play((c, o, t) => suonoAggancio(c, o, t, !!perfetto), 0, 1.5), allarme: tipo => play((c, o, t) => suonoAllarme(c, o, t, tipo)), record: () => play((c, o, t) => suonoRecord(c, o, t), 2.4) };
 }
@@ -550,6 +550,37 @@ function disegnaNave(ctx, nave, x, y, rot, px, stato) {
   ctx.restore();
 }
 
+// ---- esplosione (stessi principi del docking): la nave scompare e si spezza nelle sue parti, con lampo, onda d'urto e scintille. In pixel di schermo; e' una funzione del tempo
+// (t0 in ms), quindi non serve integrare nulla. rot = rotazione sullo schermo, px = pixel per metro della nave.
+function creaEsplosione(nave, x, y, rot, px, t0) {
+  const sE = Math.max(px, 4), co = Math.cos(rot), si = Math.sin(rot);
+  const frammenti = nave.parti.map(parte => {
+    const pts = parte.pts, n = pts.length, c = [pts.reduce((a, q) => a + q[0], 0) / n, pts.reduce((a, q) => a + q[1], 0) / n];
+    const fx = x + (c[0] * co - c[1] * si) * px, fy = y + (c[0] * si + c[1] * co) * px, ang = Math.atan2(fy - y, fx - x) + (Math.random() - 0.5) * 1.2, sp = (1.5 + Math.random() * 3.5) * sE;
+    return { pts, c, x: fx, y: fy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, th: rot, w: (Math.random() - 0.5) * 3 };
+  });
+  const scintille = Array.from({ length: 70 }, () => { const a = Math.random() * Math.PI * 2, sp = (1.5 + Math.random() * 8) * sE; return { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vita: 0.7 + Math.random() * 1.6, r: (0.08 + Math.random() * 0.18) * sE }; });
+  return { t0, x, y, px, sE, frammenti, scintille };
+}
+function disegnaEsplosione(ctx, B, ora) {
+  const t = (ora - B.t0) / 1000; if (t < 0) return;
+  ctx.save();
+  if (t < 0.4) { const R = 9 * B.sE, gr = ctx.createRadialGradient(B.x, B.y, 0, B.x, B.y, R), a = 1 - t / 0.4;                         // lampo
+    gr.addColorStop(0, 'rgba(255,250,220,' + a + ')'); gr.addColorStop(0.4, 'rgba(255,170,70,' + a * 0.6 + ')'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(B.x, B.y, R, 0, 7); ctx.fill(); }
+  if (t < 1.2) { ctx.strokeStyle = 'rgba(255,208,138,' + (1 - t / 1.2) * 0.8 + ')'; ctx.lineWidth = Math.max(2, 0.14 * B.sE);                // onda d'urto
+    ctx.beginPath(); ctx.arc(B.x, B.y, 20 * (1 - Math.exp(-t * 2.6)) * B.sE, 0, 7); ctx.stroke(); }
+  for (const f of B.frammenti) {                                                                                                          // le parti che si allontanano ruotando (non si dissolvono)
+    ctx.save(); ctx.translate(f.x + f.vx * t, f.y + f.vy * t); ctx.rotate(f.th + f.w * t); ctx.scale(B.px, B.px);
+    ctx.fillStyle = '#10202e'; ctx.strokeStyle = t < 0.7 ? '#ffb347' : '#7fe7ff'; ctx.lineWidth = Math.max(1.2, 0.07 * B.sE) / B.px;
+    ctx.beginPath(); f.pts.forEach(([px, py], i) => { const dx = px - f.c[0], dy = py - f.c[1]; i ? ctx.lineTo(dx, dy) : ctx.moveTo(dx, dy); }); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const q of B.scintille) { if (t > q.vita) continue; ctx.globalAlpha = 1 - t / q.vita; ctx.fillStyle = t < 0.3 ? '#ffffff' : t < 0.8 ? '#ffd08a' : '#ff7a3a';   // scintille: da bianche ad arancio a rosso
+    ctx.beginPath(); ctx.arc(B.x + q.vx * t, B.y + q.vy * t, Math.max(1, q.r), 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
 // ---- riquadro di testo (stesso stile del docking: bordo colorato, titolo grande al centro, righe sotto). lines: [testo, colore, { center }]
 // Le righe lunghe vanno a capo (con rientro, se iniziano con spazi); se il riquadro non entra in altezza il carattere si rimpicciolisce. basso: il riquadro sta in basso come nel docking, altrimenti al centro.
 function overlay(ctx, aw, h, lines, titolo, tcol, basso) {
@@ -566,25 +597,1154 @@ function overlay(ctx, aw, h, lines, titolo, tcol, basso) {
   righe.forEach((r, i) => { const y = by + 82 + i * lh; if (r.ex.center) testo(ctx, r.t, bx + bw / 2, y, r.col || COL.txt, size, 'center'); else testo(ctx, r.t, bx + pad + r.ind, y, r.col || COL.txt, size); });
 }
 
-root.Aspetto = { COL, FONT, clamp, overlay, testoDx, testo, testoAdattato, avvolgi, pannello, barra, riga, indicatore, creaStelle, disegnaStelle, disegnaParte, GABBIANO, disegnaNave, corpo };
+// Magnete dello zero per le barre di precisione (la rotazione e quelle che verranno): aiuta ad ARRIVARE allo zero. Se il valore ci si avvicina piano (sotto "entra", con variazione sotto "lento") e l'ultimo
+// comando lo stava frenando, cade nello zero e ci resta. Qualsiasi comando (anche un microtocco) lo sgancia subito, e dopo un tocco in una direzione non ricattura finche' non si frena nel verso opposto.
+// passo() dice se chi usa la barra deve forzare il valore reale a zero: cosi' "a zero" vuol dire davvero fermo. cmd = verso dell'ultimo comando (+1, -1, 0 se nessuno). cattura = appena caduto.
+function creaMagnete(entra, esce, lento) {
+  const m = { bloccato: false, cattura: false, ult: 0, ultCmd: 0,
+    passo(v, dt, spinto, cmd) { const dv = Math.abs(v - m.ult) / Math.max(dt, 1e-3); m.ult = v; m.cattura = false;
+      if (cmd) { m.bloccato = false; m.ultCmd = cmd; }
+      if (!m.bloccato && Math.abs(v) < entra && dv < lento && m.ultCmd * v <= 0) { m.bloccato = true; m.cattura = true; } else if (m.bloccato && Math.abs(v) > esce) m.bloccato = false;
+      return m.bloccato && !spinto; } };
+  return m;
+}
+
+root.Aspetto = { creaMagnete, creaEsplosione, disegnaEsplosione, COL, FONT, clamp, overlay, testoDx, testo, testoAdattato, avvolgi, pannello, barra, riga, indicatore, creaStelle, disegnaStelle, disegnaParte, GABBIANO, disegnaNave, corpo };
 })(this);
 
 </script>
 <script>
+// GENERATO da strumenti/costruisci_terra_luna.py a partire da tutorial.txt: non modificare qui
+const TUT_TESTO = `# ===========================================================================================
+#  COPIONE DEL TUTORIAL DI TERRA-LUNA  (si modifica a mano: e' un semplice file di testo)
+# ===========================================================================================
+#  Dopo ogni modifica si ricostruisce il gioco con:   python3 strumenti/costruisci_terra_luna.py
+#  (oppure lo chiedi a Claude). Se il copione ha un errore, il gioco lo scrive nel riquadro radio
+#  con il numero di riga.  Le righe che iniziano con # sono commenti e il gioco le ignora (solo se il # e' a inizio riga).
+#  Le righe vuote e i rientri (spazi a sinistra) non contano: servono solo a leggere meglio.
+#  Il copione si esegue dall'alto in basso, una riga alla volta.
+#  L'albero delle scelte (come si incrociano i moduli, quali rami esistono) si genera con:   node strumenti/albero_tutorial.js
+#
+#  --- STRUTTURA ----------------------------------------------------------------------------
+#  APERTURA -> MENU (ETICHETTA: menu) con sei scelte, ognuna porta a un modulo:
+#     tempo      -> modulo TEMPO, poi torna al menu
+#     comandi    -> modulo COMANDI (manovra: rotazione, stabilizzatore, flip e partenza), poi torna al menu
+#     arrivo     -> il capo fa la partenza e tu fai la lezione di ARRIVO alla Luna, poi FINALE
+#     basic      -> giro dell'interfaccia, poi torna al menu
+#     tutorial   -> tutto in fila: TEMPO, COMANDI, CROCIERA, ARRIVO, FINALE   (si ricorda con l'etichetta "completo")
+#     esperto    -> il capo ti lascia i comandi: il tutorial finisce subito
+#
+#  --- DIALOGO ------------------------------------------------------------------------------
+#  CAPO: testo               il capo parla. Ogni battuta del capo aspetta INVIO (la riga INVIO non serve piu' e viene ignorata)
+#  TU: testo                 una battuta del giocatore (passa da sola dopo un secondo)
+#  QUALSIASINOME: testo      un altro personaggio (per la storia futura): compare con il suo nome
+#  CAPO: prima || seconda    una battuta con varianti: la prima volta dice "prima", se la ripete in un altro punto del copione dice "seconda" (e cosi' via).
+#                            Il capo si ricorda di averla gia' detta quando la riga ha la STESSA prima variante. Si usa solo nelle battute (non negli ATTENDI e nei RIPETI).
+#  Se dopo la battuta c'e' un ATTENDI (eventualmente con SBLOCCA / MARCA / RIPETI / TEMPO in mezzo) o una SCELTA, non serve INVIO: l'azione o la risposta partono appena la battuta e' scritta.
+#  Le battute piu' lunghe di 2 righe nel riquadro hanno 2 secondi di lettura in piu' (solo quelle del giocatore e dei conti).
+#
+#  --- COMANDI E PANNELLO ---------------------------------------------------------------------
+#  CONTO: 3                  battuta del capo che passa da sola dopo meno di un secondo (per i conti alla rovescia)
+#  TENTATIVO                 conta una valutazione della spinta (si azzera con RIPARTI); condizione: tent>=4
+#  RIPETI: 3 | frase | frase  durante il PROSSIMO ATTENDI il capo dice una frase ogni 3 secondi (in ordine casuale, senza INVIO, senza fermare niente); sostituisce gli aiuti a 20 secondi
+#  RIPARTI                   rifa' la partenza: nuova nave sull'orbita di parcheggio, tempo 1, stabilizzatore acceso
+#  RUOTA: FERMA              il capo contrasta la rotazione fino a fermare la nave (led nel centro)
+#  RUOTA: SX 0.3             il capo da' un colpo di rotazione (SX = freccia sinistra, DX = freccia destra) per quel numero di secondi, come se premesse lui il tasto
+#  SPINGI: eqCs>=175         il capo tiene premuta la spinta (↑) finche' la condizione diventa vera (al massimo 25 secondi); il copione aspetta
+#  GIRA                      il capo preme il flip (barra spaziatrice) al posto tuo; per aspettare che finisca: ATTENDI: flip
+#  SALVA: nome               ricorda la scena (nave, propellente, tempo) in questo punto
+#  CARICA: nome              riporta la scena a come era al SALVA con quel nome (serve per riavvolgere e riprovare)
+#  ORBITA: 1                 sceglie l'orbita di attracco obiettivo (1, 2, 3 oppure auto = la piu' vicina)
+#  CORREGGI: 350 550         piccola correzione di rotta (costa un po' di propellente): il passaggio dalla Luna cade fra quelle due quote (km). Se non c'e' soluzione, non fa niente
+#  AGGANCIA                  il computer di bordo aggancia la nave all'orbita obiettivo (solo se e' gia' legata alla Luna)
+#  SBLOCCA: tempo            accende un comando e la sua parte di pannello. Valori: tempo (tutti i tasti), tempo1 (solo il 1), tempo3 (solo il 3), tempo01 (solo 0 e 1), spinta (freccia su / W), rot, stab, flip
+#  BLOCCA: tempo            spegne di nuovo un comando gia' sbloccato (e la sua parte di pannello)
+#  SPEGNI / ACCENDI          spegne (o riaccende) tutti i comandi e il pannello. Mentre e' spento i tasti non fanno niente
+#  EVIDENZIA: tempo          tiene visibile una parte dell'interfaccia anche da spenta. EVIDENZIA: nulla le toglie tutte. Parti: tempo (i tasti), stab, rot (barra e led),
+#                            prop (barra del propellente), tempi (tempo di gioco e di missione), dist (distanze), base (prop + tempi + dist insieme), spinta (arco della spinta), dati (il pannello dati)
+#  TEMPO: 2                  imposta il tasto del tempo (0, 1, 2 o 3), come se lo premesse il capo (una riga TEMPO subito dopo una battuta parte mentre il capo sta ancora parlando)
+#  STABILE                   riporta la nave stabile: tempo 1, stabilizzatore acceso, nessuna rotazione
+#  PAUSA: 3                  aspetta 3 secondi (anche decimali, 1.5)
+#  MARCA                     azzera il conteggio dei tasti del tempo premuti e di secAllin
+#
+#  --- ATTENDERE IL GIOCATORE -----------------------------------------------------------------
+#  ATTENDI: cond | aiuto 1 | aiuto 2
+#      aspetta che "cond" diventi vero. Se il giocatore resta fermo 20 secondi il capo dice "aiuto 1", dopo
+#      altri 20 "aiuto 2". "cond" e' una condizione (vedi sotto).
+#
+#  --- SCELTE DEL GIOCATORE (da 1 a 6 opzioni; si possono anche ripetere le stesse parole, per esempio "...") -----------------------------------------------------
+#  SCELTA
+#    OPZIONE [etichetta] Testo della risposta del giocatore
+#      CAPO: come risponde il capo (anche piu' righe, SE, SCELTA annidate, VAI...)
+#    OPZIONE [altra] Un'altra risposta
+#      CAPO: ...
+#  FINE
+#  [etichetta] e' facoltativa: se c'e', il gioco ricorda la scelta e piu' avanti si puo' reagire con SE etichetta.
+#  IMPOSTA: etichetta        ricorda qualcosa senza che il giocatore scelga (etichetta a piacere, minuscola, senza spazi)
+#
+#  --- BATTUTE CHE DIPENDONO DA QUELLO CHE E' SUCCESSO -------------------------------------------
+#  SE condizione
+#    ...battute se vero...
+#  ALTRIMENTI SE altra condizione
+#    ...
+#  ALTRIMENTI
+#    ...battute se falso...
+#  FINE
+#  (ALTRIMENTI SE e ALTRIMENTI sono facoltativi; un solo FINE chiude tutto. Dopo SE e ALTRIMENTI non si mettono i due punti.)
+#
+#  --- SALTI, TAPPE, FINE ----------------------------------------------------------------------
+#  ETICHETTA: nome           un punto del copione a cui si puo' tornare (scritta fuori da ogni SE e SCELTA)
+#  VAI: nome                 salta a quell'etichetta (anche da dentro un SE o una SCELTA)
+#  TAPPA: nome               segna nei dati dei tester che il giocatore e' arrivato qui (e dopo quanti secondi)
+#  CHIUDI: esito             chiude il tutorial. Gli esiti sono solo un nome per i dati: completato, esperto, saltato...
+#
+#  --- CONDIZIONI ----------------------------------------------------------------------------------
+#  Si possono combinare con  E,  O,  NON   (NON lega piu' forte, poi E, poi O; niente parentesi).
+#     es.:   SE cucina E NON aiutato        SE pranzo O capo        SE raKm>=9000 E legata
+#  Un'etichetta (di una OPZIONE o di IMPOSTA) e' vera se il giocatore l'ha scelta.
+#  Fatti vero/falso:
+#     anticipo     all'ultimo ATTENDI il giocatore aveva gia' fatto la cosa prima che gliela chiedessero
+#     aiutato      all'ultimo ATTENDI ha avuto bisogno dell'aiuto del capo
+#     lento        all'ultimo ATTENDI ci ha messo piu' di 30 secondi
+#     stabOn       adesso lo stabilizzatore e' acceso
+#     veloce       adesso il tempo e' sul tasto 2 o 3
+#     spento       adesso i comandi sono spenti
+#     centrato     il led della rotazione e' fermo nello zero (il "clic")
+#     rotOk        ha gia' fatto ruotare la nave
+#     inFin        la nave e' dentro la finestra di lancio     spingo   sta premendo la spinta     prua   la prua guarda nel senso del moto
+#     inSOI        dentro la sfera d'influenza della Luna (dopo la partenza)
+#     traiOk (spinta giusta, passaggio entro 25.000 km dalla Luna) traiPreciso (passaggio tra 100 e 3.500 km) traiSchianto traiPoca traiTroppa   com'e' la traiettoria prevista dopo la spinta
+#     quotaOk      il passaggio previsto dalla Luna e' una quota buona per l'arrivo (100 - 650 km)
+#     allontana    dentro la sfera d'influenza della Luna e in allontanamento (ha gia' passato il punto piu' vicino)
+#     legata       la Luna tiene la nave (orbita chiusa)
+#     orbitaOk     l'orbita attorno alla Luna combacia con quella obiettivo: fra poco la nave si aggancia
+#     vicino       legata e quasi sull'orbita obiettivo (si accontenta il computer di bordo con AGGANCIA)
+#     orbita       la nave e' stata agganciata all'orbita obiettivo
+#     fallito      schianto, rientro o nave persa (la nave e' ferma: serve CARICA o RIPARTI)
+#  Numeri (con  >=  <=  >  <  = ):
+#     tAtt         secondi passati nell'ATTENDI in corso
+#     secSu1       secondi consecutivi passati con il tempo sul 1
+#     secAllin     secondi con la prua entro 15 gradi dalla direzione di moto (dove la terrebbe lo stabilizzatore); un'uscita sotto mezzo secondo si tollera; riparte da MARCA
+#     ttFin / ttDs / ttMin  secondi reali / decimi di secondo reali (al tempo attuale) / minuti di gioco alla partenza della finestra di lancio
+#     eqCs         spinta accumulata in centesimi di km/s (la barra: giusto tra 174 e 180)
+#     periDs / periMin  decimi di secondo reali (al tempo attuale) / minuti di gioco al punto piu' vicino alla Luna (99999 se la traiettoria non lo ha)
+#     quotaKm      quota prevista al punto piu' vicino (km)    altKm   quota attuale sulla Luna (km)
+#     raKm / rpKm  quota massima / minima dell'orbita attorno alla Luna (km); raKm vale 99999 se la nave non e' legata
+#     rotTocchi    quante volte ha premuto le frecce dopo l'ultima MARCA     vietati   quante volte ha premuto un tasto del gioco non ancora acceso
+#     aiutiTot     quante volte il capo ha dovuto ripetere     tempo   il tasto del tempo in uso (0-3)     attesa   secondi dell'ultimo ATTENDI     tent   valutazioni della spinta
+#  Condizioni da usare dopo ATTENDI: tempo3 (provate 3 velocita'), tre (premuto il 3), su1 (tempo sul 1),
+#     rot (nave ruotata), stab (stabilizzatore acceso e led nello zero), flip (flip completato).
+# ===========================================================================================
+
+
+# ---------------------------------------------------------------- APERTURA (comandi spenti)
+TAPPA: apertura
+CAPO: ...e ricordati: è il tuo primo viaggio, non farti prendere dal panico e segui le istruzioni.
+SCELTA
+  OPZIONE ...
+FINE
+CAPO: Mi ricevi, recluta? Orbita stabile attorno alla Terra, nave a posto, tu non molto.
+
+
+# ---------------------------------------------------------------- MENU: cosa vuoi rivedere?
+# Ci si torna dai moduli brevi. Ogni volta la nave riparte nuova sull'orbita di parcheggio, tutti i comandi sono spenti.
+ETICHETTA: menu
+TAPPA: menu
+BLOCCA: tempo
+BLOCCA: rot
+BLOCCA: stab
+BLOCCA: flip
+BLOCCA: spinta
+EVIDENZIA: nulla
+RIPARTI
+SE menu_visto
+  CAPO: Allora. Adesso ti ricordi tutto dell'addestramento?
+ALTRIMENTI
+  IMPOSTA: menu_visto
+  CAPO: Allora. Ti ricordi tutto dall'addestramento?
+FINE
+SCELTA
+  OPZIONE [tempo] Ehm... c'era quella cosa riguardo al tempo?
+    VAI: tempo
+  OPZIONE [comandi] Com'è che guido quest'affare?
+    VAI: comandi
+  OPZIONE [arrivo] Non ho capito come parcheggio quest'affare.
+    VAI: arrivo
+  OPZIONE [basic] Io... eh... Dove sono?
+    VAI: basic
+  OPZIONE [tutorial] Quale addestramento?
+    IMPOSTA: completo
+    CAPO: Quale addestramento. Certo. Ogni volta uguale: arriva un recluta, io ricomincio da capo.
+    CAPO: Mettiti comodo. Si parte dall'inizio. Tutto, nell'ordine, senza scorciatoie.
+    VAI: tempo
+  OPZIONE [esperto] Ricordo tutto alla perfezione! Quando cominciamo?
+    VAI: esperto
+FINE
+
+
+# ---------------------------------------------------------------- MODULO TEMPO
+ETICHETTA: tempo
+TAPPA: tempo
+CAPO: Il tempo! concetto meraviglioso e terrificante. || Il tempo. Ancora. Concetto meraviglioso e terrificante, e a quanto pare ancora indigesto.
+CAPO: È semplice: alla velocità attuale di gioco un tuo secondo equivale a dieci minuti di tempo reale.
+CAPO: Il tempo nello spazio gioca strani scherzi. Non te l'hanno detto nell'addestramento? || Il tempo nello spazio gioca strani scherzi. Te l'ho già detto. Sì, anche questo.
+CAPO: Ne ho già istruiti sette, quest'anno. Non ho voglia di istruire anche te.
+SCELTA
+  OPZIONE [pranzo] Quindi la pausa pranzo dura un secondo?
+    CAPO: La pausa pranzo non esiste. Nemmeno il pranzo.
+  OPZIONE [cucina] Capo, io ero qui per il corso di cucina.
+    CAPO: Il corso di cucina è al piano "terra". Questo è il piano "astronave".
+  OPZIONE [capo] Sì, capo.
+    CAPO: Non chiamarmi capo. ...No, va bene. Chiamami capo.
+FINE
+# Il capo mostra le velocita' una alla volta (comandi spenti, si illumina solo il tasto che mostra), poi il giocatore prova il 3, poi ha tutte e quattro le velocita'.
+CAPO: Dicevamo... il tempo. || Dicevamo... il tempo. Per la seconda volta, ma dicevamo.
+EVIDENZIA: tempo
+CAPO: Guarda bene. Velocità 2: un tuo secondo sono tre ore.
+TEMPO: 2
+PAUSA: 4
+CAPO: Velocità 1: un tuo secondo sono dieci minuti.
+TEMPO: 1
+PAUSA: 4
+CAPO: Velocità 0: tempo reale. Un secondo è un secondo.
+TEMPO: 0
+CAPO: Sembra in pausa, ma in realtà il tempo scorre. Molto lentamente.
+CAPO: Puoi anche andare a prenderti un caffè al bar e tornare, e non sarà cambiato molto.
+CAPO: Buona fortuna a trovare un caffè decente da quelle parti!
+CAPO: A questa velocità la nave ci mette più di 7 ore a ruotare attorno alla Terra.
+CAPO: 7 ore REALI!
+CAPO: Però sappi anche che questa è la velocità più lenta che puoi avere. Non puoi fermare il tempo.
+CAPO: Non puoi mettere in pausa. Mai.
+CAPO: Da ora in poi il tempo continuerà a scorrere. Sempre.
+CAPO: Questo fa pensare alla fugacità delle cose, vero?
+CAPO: Quando sei solo... nello spazio... Undici anni per la rotta verso Urano...
+CAPO: Tutto prende un altro significato, vero?
+SCELTA
+  OPZIONE [vergine] In realtà per me è la prima volta.
+    CAPO: Ogni volta è sempre la prima volta. Soprattutto per i sette prima di te. Tu vedi di arrivare almeno alla seconda.
+  OPZIONE [cringe] Ehm Capo. Tutto ok?
+    CAPO: Ma cosa ne vuoi sapere te. Non perdiamo altro tempo.
+FINE
+CAPO: Ok, ora proviamo qualcosa di più drastico. Ti abilito la velocità 3. Un giorno al secondo.
+SBLOCCA: tempo3
+MARCA
+CAPO: Premi 3, o clicca il tasto 3 nel pannello.
+ATTENDI: tre | Provalo, il 3. Ma non spaventarti. | Il 3, recluta. Quello grande.
+EVIDENZIA: nulla
+CAPO: WOOOOOHHH! Che roba eh!
+CAPO: La nave sembra una trottola. Per questo non lo si usa mentre manovri.
+SE aiutato
+  CAPO: Ci voleva un aiutino, vedo.
+FINE
+SCELTA
+  OPZIONE [nausea] Ho la nausea.
+    SE cucina
+      CAPO: Nausea e corso di cucina. Hai un futuro nella ristorazione.
+    ALTRIMENTI
+      CAPO: Il vuoto non ha nausea. Il tuo stomaco sì, ma è un problema tuo.
+    FINE
+  OPZIONE [futuro] Ho visto il futuro. Era uguale.
+    SE vergine
+      CAPO: Quindi sei sopravvissuto a questo viaggio di prova? Mi sorprende.
+    ALTRIMENTI
+      CAPO: Il futuro è sempre uguale, a meno che non usi il carburante giusto.
+    FINE
+FINE
+CAPO: Ok, ora ti abilito tutte le velocità. Provale da solo: 0, 1, 2, 3. Prendi confidenza.
+SBLOCCA: tempo
+# questa battuta non vuole INVIO: resta visibile durante l'attesa
+CAPO: Quando sei pronto, mettiti a velocità 1 e restaci.
+# massimo 60 secondi: se non sta fermo almeno 3 secondi sull'1, si spegne tutto tranne l'1
+ATTENDI: secSu1>=3 O tAtt>=60
+SE secSu1>=3
+  IMPOSTA: su1_ok
+ALTRIMENTI
+  TEMPO: 1
+FINE
+BLOCCA: tempo
+SBLOCCA: tempo1
+SE su1_ok
+  CAPO: Ecco. Sull'1 ci si sta bene: è lì che si manovra. Ti spengo le altre velocità.
+ALTRIMENTI
+  CAPO: Basta così! Ti avevo chiesto di fermarti sull'1 e tu giochi con il tempo come con un videogioco. Ti spengo tutto tranne l'uno.
+FINE
+# dove si va dopo il tempo: al ripasso di fine arrivo, al menu (modulo singolo) o avanti con i comandi (tutorial completo)
+SE ripasso
+  CAPO: Ecco. Adesso il tempo lo sai. Se no, non è colpa mia.
+  VAI: fine_arrivo2
+ALTRIMENTI SE NON completo
+  VAI: menu
+FINE
+VAI: manovra
+
+
+# ---------------------------------------------------------------- MODULO COMANDI
+# Chi viene dal menu ha il tempo ancora spento: il capo lo blocca sull'1 (nel tutorial completo l'ha gia' fatto il modulo del tempo).
+ETICHETTA: comandi
+TAPPA: comandi
+CAPO: Guido... affare... vedo che abbiamo del lavoro da fare.
+CAPO: Innanzitutto per evitare di farti ammazzare blocco il tempo a 1.
+BLOCCA: tempo
+SBLOCCA: tempo1
+TEMPO: 1
+
+# ---------------------------------------------------------------- PASSO 2: LA MANOVRA (due razzi per ruotare, uno per spingere)
+ETICHETTA: manovra
+CAPO: Per PILOTARE questa ASTRONAVE ci vuole poco. Lo potrebbe fare anche un bambino.
+CAPO: Per questo abbiamo assunto te.
+CAPO: Basta che ricordi due cose: hai due piccoli razzi laterali per far ruotare la nave in senso orario o antiorario.
+CAPO: E un grosso razzo che ti spinge in avanti.
+CAPO: Le navi più fiche hanno anche dei razzetti davanti per farti rallentare, ma qui non abbiamo questi optional.
+CAPO: Quindi occhio a quanto spingi.
+CAPO: Anche perché il propellente costa!
+
+# ---------------------------------------------------------------- PASSO 2a: LA ROTAZIONE E LA BARRA
+# Il capo la fa vedere (un colpetto, poi la riporta a zero), poi il giocatore prova da solo: deve allinearsi alla direzione di marcia per 5 secondi (o dopo 2 minuti lo aiuta il capo).
+TAPPA: rotazione
+EVIDENZIA: rot
+SE completo
+  CAPO: Adesso vediamo la rotazione. Guarda la barra in alto. Ti dice quanto velocemente stai ruotando su te stesso.
+ALTRIMENTI
+  CAPO: Per prima cosa vediamo la rotazione. Guarda la barra in alto. Ti dice quanto stai ruotando su te stesso.
+FINE
+CAPO: Provo a dare io un colpetto. Guarda il led che si sposta.
+RUOTA: SX 0.4
+PAUSA: 3
+CAPO: Vedi il puntino bianco, non torna al centro da solo.
+CAPO: Nello spazio non c'è nulla che ti frena. Continui a girare fino a che non spingi un po' dall'altra parte.
+CAPO: Newton ci aveva avvisati.
+CAPO: Per fermare la rotazione devi riportare il led bianco al centro.
+RUOTA: FERMA
+PAUSA: 2
+CAPO: Rosso: stai girando troppo, giallo: attenzione, verde, sei tranquillo.
+CAPO: Lo capisce anche un bambino.
+CAPO: Guarda la nave: è ferma rispetto alle stelle, ma l'orbita gira. Il muso non guarda più dove andiamo.
+CAPO: Prova tu: rimetti la nave in linea con la direzione di marcia, e restaci per cinque secondi. Senza sbandare.
+CAPO: usa le frecce oppure i tasti A/D
+SBLOCCA: rot
+MARCA
+# ogni 5 secondi un incitamento (senza INVIO); dopo 2 minuti senza riuscirci il capo si arrende e aiuta
+RIPETI: 3 | Più a sinistra. No, l'altra sinistra. | Frecce sinistra e destra, recluta. | Il muso va dove va l'orbita. | Un colpetto. Uno. Non cento. | Anche la tartaruga ci è arrivata. Tardi. | Piano. Non è un'auto a noleggio. | Guarda la nave, non me. | Il mio criceto lo farebbe meglio. | Respira. Nello spazio non serve, ma fa scena. | Dovevo fare il pescatore. | Sei vicino. Ho detto vicino. Non era vero. | Ruota un po', fermati, ruota ancora. | Se continui così ti regalo un cestino. | Ti sto guardando. Con affetto. Quasi. | Non è difficile. Lo dicevano anche i sette. | Dai, che il caffè si fredda.
+ATTENDI: secAllin>=5 O tAtt>=120
+SE secAllin>=5
+  CAPO: Allineato! Ce l'hai fatta! Chiamo i giornali.
+  CAPO: Avevo scommesso contro di te. Ho perso tre caffè.
+  CAPO: Ora riporta il led al centro.
+  ATTENDI: centrato | Piano, piano. Un colpetto dalla parte opposta. | Il led al centro, recluta. Il centro è quello in mezzo.
+  CAPO: Fermo. Bravo. Adesso non toccare niente.
+  PAUSA: 6
+  CAPO: Vedi? Di nuovo: non stai ruotando, ma la prua ha preso un'altra strada.
+  CAPO: L'orbita curva, e tu no. Per restare in linea devi curvare insieme a lei.
+  CAPO: Se non vuoi correggere a mano... un po' più a destra, un po' più a sinistra...
+  CAPO: puoi usare LO STABILIZZATORE!
+  CAPO: Premi il tasto P e guardalo riportarti in riga.
+  SBLOCCA: stab
+  ATTENDI: stab | Tre volte che ti devo ripetere le cose. Il settimo era più sveglio. Il sesto no. | PREMI P!
+ALTRIMENTI
+  CAPO: Basta così. Ti aiuto io, prima che il caffè diventi ghiaccio.
+  CAPO: Non è colpa tua: è colpa dell'orbita. Che gira.
+  CAPO: Per questo esiste LO STABILIZZATORE. Fa il lavoro al posto tuo.
+  CAPO: Premi P, e lui ti rimette in riga.
+  SBLOCCA: stab
+  ATTENDI: stab | Tre volte che ti devo ripetere le cose. Il settimo era più sveglio. Il sesto no. | PREMI P!
+FINE
+
+# ---------------------------------------------------------------- PASSO 2b: LO STABILIZZATORE
+TAPPA: stabilizzatore
+BLOCCA: rot
+EVIDENZIA: nulla
+CAPO: Lo stabilizzatore ti aiuta a stare dritto. Fa il lavoro sporco al posto tuo. Lo adoro.
+CAPO: Ti allinea alla direzione del moto, e ti ci tiene per tutta l'orbita.
+CAPO: Con lo stabilizzatore attivo il centro della barra vuol dire che giri come l'orbita.
+CAPO: Consuma un po' di propellente, ma per i primi tempi è indispensabile. Ne vale la pena.
+CAPO: Pilotare senza è roba da piloti annoiati dalla vita. Se puoi usarlo, usalo.
+CAPO: E mi raccomando: non romperlo mai. Meglio che tu non sappia cosa succede.
+SCELTA
+  OPZIONE [spegnere] E se voglio spegnerlo?
+    CAPO: Con lo stesso tasto con cui si accende. È la cosa più semplice di tutta l'astronave.
+  OPZIONE [colpa] Quindi se sbaglio è colpa dello stabilizzatore.
+    CAPO: È colpa dello stabilizzatore, ma paghi te. Ti piacerà la burocrazia.
+FINE
+
+
+# ---------------------------------------------------------------- PASSO 3: IL FLIP
+TAPPA: flip
+CAPO: E infine... il flip! Premi la barra spaziatrice.
+SBLOCCA: flip
+ATTENDI: flip | Premi spazio, recluta. Guarda la nave girarsi. | La barra spaziatrice. Quella lunga.
+CAPO: Hai visto? Il flip ha spento lo stabilizzatore da solo: un riguardo, una volta tanto.
+CAPO: Il flip ti ruota la nave di 180 gradi. || Il flip ti ruota la nave di 180 gradi. Sì, l'avevo già detto. Ripeto perché serve.
+CAPO: Quando usarlo? Se usi il cervello, lo capisci da solo. Se non lo capisci, ne parliamo con i tuoi eredi.
+SCELTA
+  OPZIONE [cervello] Ho il cervello.
+    CAPO: Lo spero. Anche il precedente ce l'aveva.
+  OPZIONE [eredi] Non ho eredi.
+    CAPO: Per quello ti ho assunto. Meno grane se muori.
+FINE
+
+
+# ---------------------------------------------------------------- PASSO 4: LA SPINTA (la partenza verso la Luna)
+# Comandi staccati: il capo spiega, poi da' il conto alla rovescia per spingere e per staccare. Si sbloccano solo la spinta e le velocita' 1 e 0.
+# Dopo il rilascio si valuta la traiettoria prevista: OK, schianto, troppa spinta, poca spinta, partenza storta (si ripete).
+TAPPA: spinta
+BLOCCA: tempo
+BLOCCA: rot
+BLOCCA: stab
+BLOCCA: flip
+STABILE
+CAPO: Ti rimetto in rotta: velocità 1, stabilizzatore acceso. Comandi spenti, ti prego di non toccare niente.
+CAPO: Adesso il pezzo più importante: la spinta!
+EVIDENZIA: spinta
+CAPO: Vedi la nostra orbita? Adesso è un cerchio perfetto attorno alla Terra.
+CAPO: Con la spinta giusta vedrai la tuta traiettoria prevista srotolarsi verso la luna.
+CAPO: Ah, la luna! Se parti dal punto giusto ci arrivi senza bruciare tutto il carburante.
+CAPO: Il punto giusto è chiamato "finestra". È la zona verde più spessa e luminosa sull'orbita. 
+CAPO: Più fai cominciare la tua spinta al momento esatto della finestra, dove è più gonfia. Più sarai direzionato meglio verso la luna.
+CAPO: Si aspetta, come l'autobus. Con la differenza che questa è più puntuale.
+CAPO: Faremo così: ti do io il conto alla rovescia, e tu fai due sole cose.
+CAPO: Uno: quando ti dico "spingi", premi ↑ o W e tieni premuto. Senza mollare mai.
+CAPO: Due: quando ti dico "stacca", molli. Anche per quello ti do il conto alla rovescia.
+CAPO: Mentre spingi, attorno alla nave compare un arco: è la spinta accumulata. Il tratto verde è la quantità giusta, il segno bianco è il punto ideale.
+CAPO: Guarda la linea tratteggiata: è dove andrà la nave. Si sposta mentre spingi: non spaventarti.
+CAPO: Serve precisione, ma un piccolo errore te lo puoi permettere. 
+CAPO: Ti sblocco solo ↑ e le velocità 1 e 0. Lo 0 è per chi ha i riflessi di un bradipo missile: così la manovra dura un quarto d'ora.
+CAPO: Quando sei pronto premi INVIO, e aspettiamo la finestra.
+
+ETICHETTA: spinta_via
+BLOCCA: spinta
+STABILE
+SE inFin
+  CAPO: Siamo proprio dentro la finestra: troppo tardi, aspettiamo che passi.
+  ATTENDI: NON inFin
+FINE
+CAPO: Intanto accelero un po'.
+TEMPO: 2
+ATTENDI: ttMin<=60
+TEMPO: 1
+CONTO: Tieniti pronto.
+ATTENDI: ttDs<=35 O inFin
+CONTO: 3
+ATTENDI: ttDs<=25 O inFin
+CONTO: 2
+ATTENDI: ttDs<=15 O inFin
+CONTO: 1
+SBLOCCA: spinta
+SBLOCCA: tempo01
+# il via esce mezzo secondo prima della finestra: e' il tempo di reazione di chi preme (provato: premere un po' in anticipo funziona meglio che in ritardo)
+ATTENDI: ttDs<=5 O inFin
+CONTO: SPINGI! Premi ↑ e tieni premuto!
+ATTENDI: spingo O tAtt>=3
+SE NON spingo
+  BLOCCA: spinta
+  CAPO: Non hai premuto niente. Dovevi premere ↑ appena dicevo "spingi". Ricominciamo.
+  RIPARTI
+  VAI: spinta_via
+FINE
+# il conto alla rovescia per staccare segue la spinta accumulata (la barra a destra): se molla prima, si passa subito alla valutazione
+ATTENDI: eqCs>=141 O NON spingo
+SE NON spingo
+  VAI: spinta_val
+FINE
+CONTO: 3
+ATTENDI: eqCs>=153 O NON spingo
+SE NON spingo
+  VAI: spinta_val
+FINE
+CONTO: 2
+ATTENDI: eqCs>=165 O NON spingo
+SE NON spingo
+  VAI: spinta_val
+FINE
+CONTO: 1
+ATTENDI: eqCs>=172 O NON spingo
+SE NON spingo
+  VAI: spinta_val
+FINE
+CONTO: STACCA!
+ATTENDI: NON spingo O eqCs>=190
+SE spingo
+  BLOCCA: spinta
+  CONTO: MOLLA, ho detto!
+FINE
+
+# --- valutazione: la traiettoria prevista dopo il rilascio
+ETICHETTA: spinta_val
+BLOCCA: spinta
+TENTATIVO
+PAUSA: 2
+# se dopo qualche correzione la traiettoria non e' ancora buona, si ricomincia la partenza da capo
+SE tent>=4 E NON traiOk
+  BLOCCA: tempo
+  TEMPO: 0
+  CAPO: Ok, fermiamoci. A forza di correggere ci stiamo rovinando il viaggio.
+  CAPO: Ricominciamo da capo, con calma. Un respiro, e tieni il dito sul tasto.
+  RIPARTI
+  VAI: spinta_via
+FINE
+SE traiOk
+  VAI: spinta_ok
+ALTRIMENTI SE traiSchianto
+  VAI: spinta_schianto
+ALTRIMENTI SE traiTroppa
+  VAI: spinta_troppa
+ALTRIMENTI SE traiPoca
+  VAI: spinta_poca
+ALTRIMENTI
+  VAI: spinta_storta
+FINE
+
+ETICHETTA: spinta_storta
+BLOCCA: tempo
+TEMPO: 0
+CAPO: Ci sei quasi: la spinta era giusta, ma sei partito un po' presto o un po' tardi e la linea manca la Luna. Capita.
+CAPO: Rifacciamo da capo. Stavolta con più fiducia.
+RIPARTI
+VAI: spinta_via
+
+ETICHETTA: spinta_troppa
+BLOCCA: tempo
+TEMPO: 0
+CAPO: Fermi tutti, ho fermato il tempo. Hai spinto troppo: guarda la linea, passa oltre la Luna e se ne va a farsi un giro nello spazio.
+CAPO: Hai più energia del necessario. Come si fa a tornare indietro? Ricordi quello che ti ho detto sul flip?
+CAPO: Usa il cervello. Ti do solo un aiutino: si frena spingendo contro il moto.
+SE prua
+  SBLOCCA: flip
+  ATTENDI: flip | Il flip, recluta. La barra spaziatrice. Serve a girare la nave. | Gira la nave: per frenare devi spingere nel senso contrario al moto.
+  BLOCCA: flip
+FINE
+CAPO: Ecco, adesso la prua guarda indietro. Ti sblocco la spinta e la velocità 1: spingi un po', guarda la linea, e molla quando ti sembra giusta.
+SBLOCCA: spinta
+SBLOCCA: tempo01
+TEMPO: 1
+ATTENDI: spingo | Tieni premuto ↑ per frenare, recluta. | La freccia su. Quella che punta in alto.
+ATTENDI: NON spingo
+VAI: spinta_val
+
+ETICHETTA: spinta_poca
+BLOCCA: tempo
+TEMPO: 0
+CAPO: Ho fermato il tempo. Hai spinto un po' poco: la linea non arriva alla Luna.
+SE NON prua
+  CAPO: E in più la prua guarda all'indietro. Ti serve il flip per rimetterla avanti.
+  SBLOCCA: flip
+  ATTENDI: flip | Il flip, recluta. La barra spaziatrice. | Gira la nave: la spinta deve andare avanti, nel senso del moto.
+  BLOCCA: flip
+FINE
+CAPO: Ti sblocco ancora la spinta e la velocità 1. Dai un'altra spinta, e molla quando la linea arriva alla Luna.
+SBLOCCA: spinta
+SBLOCCA: tempo01
+TEMPO: 1
+ATTENDI: spingo | Tieni premuto ↑, recluta. Poi molla quando la linea tocca la Luna. | La freccia su. Quella che punta in alto.
+ATTENDI: NON spingo
+VAI: spinta_val
+
+ETICHETTA: spinta_schianto
+BLOCCA: tempo
+TEMPO: 0
+CAPO: Calma, calma. Ho fermato tutto, nessuno si è fatto male. Ancora.
+CAPO: La direzione è giusta. Fin troppo giusta: la linea va a infilarsi dritta nella Luna.
+CAPO: Si aggiusta con una microspinta. Ti riattivo ↑, a tempo fermo: un colpetto leggero e guarda la linea spostarsi.
+SBLOCCA: spinta
+ATTENDI: spingo | Un colpetto leggero su ↑, recluta. | La freccia su. Quella che punta in alto.
+ATTENDI: NON spingo
+VAI: spinta_val
+
+ETICHETTA: spinta_ok
+BLOCCA: spinta
+BLOCCA: tempo
+TEMPO: 1
+SE traiPreciso
+  CAPO: Ecco! Guarda la linea: ti porta dritto sulla Luna. Per essere il primo giorno, non male. Quasi quasi ti assumo.
+ALTRIMENTI
+  CAPO: Ecco. Un po' largo, ma ci arrivi: guarda la linea, passa vicino alla Luna.
+FINE
+# fuori dal tutorial completo i comandi finiscono qui: il capo ti rimette sulla Terra e si torna al menu
+SE NON completo
+  CAPO: Per i comandi è tutto. Ti riporto dove eri: la rotta verso la Luna la rifai quando ti serve.
+  VAI: menu
+FINE
+
+
+# ---------------------------------------------------------------- PASSO 5: LA CROCIERA (il viaggio verso la Luna, solo nel tutorial completo)
+TAPPA: crociera
+EVIDENZIA: nulla
+CAPO: Ora si viaggia. La linea tratteggiata è la tua traiettoria, con i tempi di arrivo scritti sopra.
+# per fare la lezione di arrivo serve un passaggio dalla Luna fra 350 e 550 km: se la rotta e' piu' larga il capo la ritocca, se e' da buttare la rifa' lui
+SE NON quotaOk
+  CAPO: Un momento: il tuo passaggio dalla Luna è un po' largo per l'arrivo che ho in mente. Ti do un ritocco alla rotta.
+  CAPO: Faccio due conti. Non guardare.
+  CORREGGI: 350 550
+  PAUSA: 1
+  SE NON quotaOk
+    CAPO: Niente da fare: questa rotta è da buttare. La rifaccio io, tu guarda e impara.
+    VAI: partenza_capo
+  ALTRIMENTI
+    CAPO: Fatto. Un ritocchino da pochi metri al secondo: non si vede, ma si paga.
+  FINE
+FINE
+CAPO: Quel grande cerchio tratteggiato attorno alla Luna è la sua sfera d'influenza: là dentro comanda lei, fuori comanda la Terra.
+CAPO: Da qui in poi il tempo lo gestisci tu. Ti sblocco tutte le velocità. Puoi stare a 0 e andare a prenderti un caffè per giorni, o andare a 3 e arrivare in pochi secondi.
+CAPO: Decidi tu. Basta che arrivi.
+SBLOCCA: tempo
+ATTENDI: inSOI
+VAI: soi
+
+
+# ---------------------------------------------------------------- MODULO ARRIVO: il capo fa la partenza, tu fai la lezione di arrivo
+ETICHETTA: arrivo
+TAPPA: arrivo_inizio
+CAPO: Alla Luna ci sono i parcheggiatori abusivi: sbucano dai crateri con il giubbotto catarifrangente e chiedono un contributo spontaneo di venti chilometri al secondo.
+CAPO: Non gli diamo niente. Si parcheggia bene e basta, senza pagare.
+CAPO: La partenza la faccio io: tu guardi, e non tocchi niente. Mani in grembo.
+
+ETICHETTA: partenza_capo
+TAPPA: partenza_capo
+BLOCCA: tempo
+BLOCCA: spinta
+RIPARTI
+CAPO: Aspettiamo la finestra di lancio: il punto dell'orbita da cui la spinta ci manda alla Luna. Metto la velocità 2, per non perdere tempo.
+TEMPO: 2
+SCELTA
+  OPZIONE [tempo_dubbio] Ehm... tempo?
+    CAPO: Poi ne parliamo. Adesso guarda.
+  OPZIONE Ricevuto, capo.
+    CAPO: Un recluta che ubbidisce. Segnalo sul registro: succede una volta l'anno.
+FINE
+SE inFin
+  ATTENDI: NON inFin
+FINE
+ATTENDI: ttMin<=60
+TEMPO: 1
+ATTENDI: inFin
+# una frazione di secondo dopo l'inizio della finestra: la spinta di precisione, quella che a mano e' impossibile
+PAUSA: 0.04
+SPINGI: eqCs>=175
+CORREGGI: 350 550
+CAPO: Spinta fatta. Rotta a posto, o quasi: un ritocchino e siamo a posto. Ora accelero fino alla Luna.
+TEMPO: 3
+ATTENDI: inSOI
+VAI: soi
+
+
+# ---------------------------------------------------------------- LEZIONE DI ARRIVO ALLA LUNA (dall'entrata nella sfera d'influenza all'aggancio)
+# Il giocatore fa poche azioni guidate: il flip e una frenata al punto piu' vicino, con il conto del capo.
+# Se sbaglia la scena si riavvolge (CARICA) e si riprova; alla terza volta e' il capo a fare la frenata.
+ETICHETTA: soi
+TAPPA: arrivo
+BLOCCA: tempo
+BLOCCA: spinta
+BLOCCA: flip
+BLOCCA: rot
+BLOCCA: stab
+EVIDENZIA: nulla
+TEMPO: 0
+ORBITA: 1
+PAUSA: 2
+SALVA: soi
+CAPO: Ho fermato il tempo: sei entrato nella sfera d'influenza della Luna.
+CAPO: Vedi che l'inquadratura si è allargata? Adesso si vede bene la Luna e le sue orbite di parcheggio.
+CAPO: Il cerchio verde pieno è la tua orbita di parcheggio. Ci sono orbite di parcheggio alternative: per oggi ignorale.
+CAPO: La linea tratteggiata è dove passerai, e il pallino ti dice a che quota: "qui passi a tot chilometri dalla Luna".
+CAPO: Quota giusta. Merito mio, ovviamente. Dillo in giro.
+CAPO: Il problema è un altro: arrivi a più di due chilometri al secondo.
+CAPO: A quella velocità la Luna non ti prende. Ti guarda passare e saluta con la manina.
+CAPO: Non mi credi? Guarda cosa succede se non freni.
+TEMPO: 2
+ATTENDI: allontana
+PAUSA: 2
+CAPO: Visto? Dritto e via, senza nemmeno salutare. Peccato, avevi pagato il parcheggio.
+TEMPO: 0
+CARICA: soi
+PAUSA: 1
+CAPO: Riavvolto. Per restare qui bisogna rallentare, e si rallenta spingendo contro il moto.
+CAPO: Quindi la prua deve guardare indietro: il flip, ricordi? 
+CAPO: Il momento giusto per frenare è quando sei più vicino alla Luna: lì il freno rende di più.
+CAPO: Frenare presto è come inchiodare in autostrada: ti ritrovi nel posto sbagliato, e male.
+
+ETICHETTA: arr_prova
+TAPPA: arrivo_prova
+BLOCCA: tempo
+BLOCCA: spinta
+BLOCCA: flip
+CAPO: Ti porto vicino al punto più vicino. Accelero. || Un altro giro. Accelero, tu respira.
+PAUSA: 0.1
+TEMPO: 2
+ATTENDI: altKm<=14000
+TEMPO: 1
+ATTENDI: periMin<=40
+TEMPO: 0
+CAPO: Fermo. Ci siamo quasi. Prima la prua: premi la barra spaziatrice.
+SBLOCCA: flip
+ATTENDI: flip | Spazio, recluta. La barra lunga. | Il flip gira la nave di mezzo giro. Provalo.
+BLOCCA: flip
+CAPO: Ecco: la prua guarda indietro, da qui la spinta frena.
+CAPO: Quando riparte il tempo ti faccio il conto. A "FRENA" tieni premuto ↑. A "MOLLA" molli. Punto.
+CAPO: Quando sei pronto premi INVIO: parte il tempo e parte il conto.
+PAUSA: 0.2
+TEMPO: 1
+SBLOCCA: spinta
+ATTENDI: periDs<=34
+CONTO: 3
+ATTENDI: periDs<=26
+CONTO: 2
+ATTENDI: periDs<=18
+CONTO: 1
+ATTENDI: periDs<=11
+CONTO: FRENA! Premi ↑ e tieni premuto!
+ATTENDI: spingo O tAtt>=3
+SE NON spingo
+  BLOCCA: spinta
+  CAPO: Non hai premuto niente. Il momento era quello. Riavvolgo e riproviamo.
+  VAI: arr_riprova
+FINE
+# la frenata finisce quando la quota massima dell'orbita scende verso i 5.000 km: il capo dice "molla" un po' prima, per il tempo di reazione
+ATTENDI: raKm<=6500 O NON spingo O fallito O tAtt>=8
+SE spingo
+  CONTO: MOLLA!
+  ATTENDI: NON spingo O fallito O tAtt>=2
+  SE spingo
+    BLOCCA: spinta
+    CONTO: MOLLA, ho detto!
+  FINE
+FINE
+BLOCCA: spinta
+TEMPO: 0
+PAUSA: 1.5
+SE fallito
+  VAI: arr_schianto
+ALTRIMENTI SE orbitaOk
+  VAI: arr_ok
+ALTRIMENTI SE vicino
+  VAI: arr_vicino
+ALTRIMENTI SE legata
+  VAI: arr_legata
+ALTRIMENTI
+  VAI: arr_non_legata
+FINE
+
+ETICHETTA: arr_schianto
+CAPO: Boom. Nessun problema: riavvolgo e fingiamo che non sia successo. L'assicurazione non lo sa.
+VAI: arr_riprova
+
+ETICHETTA: arr_non_legata
+CAPO: Troppo poco: la Luna non ti ha preso. Guarda la linea: ti saluta e se ne va.
+CAPO: Riavvolgo. Stavolta tieni premuto fino al "molla".
+VAI: arr_riprova
+
+ETICHETTA: arr_legata
+SE raKm>=9000
+  CAPO: Ti ha preso, ma l'orbita è un elastico teso: troppo larga. Hai frenato poco.
+ALTRIMENTI
+  CAPO: Ti ha preso, ma l'orbita è troppo stretta: hai frenato troppo.
+FINE
+CAPO: Riavvolgo. Un altro tentativo.
+VAI: arr_riprova
+
+# dopo il secondo errore il capo si offre di fare la frenata lui, perche' non ci perda il caffe' nessuno dei due
+ETICHETTA: arr_riprova
+SE prova2
+  VAI: arr_capo
+ALTRIMENTI SE prova1
+  IMPOSTA: prova2
+ALTRIMENTI
+  IMPOSTA: prova1
+FINE
+CARICA: soi
+PAUSA: 1
+VAI: arr_prova
+
+ETICHETTA: arr_capo
+CAPO: Va bene. Ho capito: serve la dimostrazione. Guarda e impara. Stavolta frena il capo.
+CARICA: soi
+PAUSA: 1
+TEMPO: 2
+ATTENDI: altKm<=14000
+TEMPO: 1
+ATTENDI: periMin<=40
+TEMPO: 0
+CAPO: Prima la prua.
+GIRA
+ATTENDI: flip
+TEMPO: 1
+ATTENDI: periDs<=9
+SPINGI: raKm<=5300 O fallito
+TEMPO: 0
+PAUSA: 1
+CAPO: Visto? Deciso, ma al momento giusto. Il resto lo fa il computer di bordo.
+AGGANCIA
+VAI: arr_agganciato
+
+ETICHETTA: arr_vicino
+CAPO: Non è perfetta, ma è abbastanza vicina all'anello. Il computer di bordo ci pensa lui.
+AGGANCIA
+VAI: arr_agganciato
+
+ETICHETTA: arr_ok
+CAPO: Ecco! Guarda: la tua orbita combacia abbastanza con l'anello. Ora non toccare niente.
+CAPO: Il computer di bordo ti aggancia da solo, ma ci vuole pazienza: due minuti tempo reale. Accelera il tempo a 1!
+SBLOCCA: tempo
+ATTENDI: orbita O tAtt>=45 | Il tempo, recluta. Il tasto 2, o il 3. | Premi 2: il tempo passa e la Luna ti aggancia.
+SE NON orbita
+  CAPO: Va bene, faccio io. Un po' di velocità.
+  TEMPO: 2
+  ATTENDI: orbita
+FINE
+BLOCCA: tempo
+
+ETICHETTA: arr_agganciato
+TAPPA: agganciato
+BLOCCA: tempo
+BLOCCA: spinta
+ATTENDI: orbita
+TEMPO: 1
+CAPO: Agganciata. Orbita raggiunta. Il computer di bordo ti ha preso per mano.
+CAPO: La lezione vera è questa: andare piano. Niente manovre brusche.
+CAPO: Nel volo vero si fa a piccoli colpi: uno qui, uno là. Guarda la linea prevista e falla combaciare con l'anello.
+CAPO: Quando è abbastanza simile, la nave si aggancia da sola. Non serve essere perfetti. Serve non essere frettolosi.
+
+ETICHETTA: fine_arrivo
+SE tempo_dubbio
+  CAPO: Ah, un'altra cosa. All'inizio mi hai chiesto del tempo. Credo non fosse una domanda retorica.
+  SCELTA
+    OPZIONE [ripasso] Sì, rivediamo il tempo, per favore.
+      CAPO: Lo sapevo. Ripetiamo, e stavolta prendi appunti.
+      VAI: tempo
+    OPZIONE Ho capito tutto, capo.
+      CAPO: Lo spero per te. Il tempo non perdona. Letteralmente.
+  FINE
+FINE
+
+ETICHETTA: fine_arrivo2
+
+# ---------------------------------------------------------------- FINALE (reagisce a tutto il percorso)
+TAPPA: finale
+CAPO: Per oggi basta così. Orbita raggiunta, nave intera, recluta quasi intera.
+SE cucina E nausea
+  CAPO: E comunque, cucina e nausea: sei la combinazione peggiore che abbia mai assunto.
+ALTRIMENTI SE cucina
+  CAPO: Il corso di cucina, comunque, è sempre al piano terra. Se cambi idea.
+ALTRIMENTI SE pranzo E colpa
+  CAPO: Niente pranzo e niente colpe. Ci si abitua.
+ALTRIMENTI SE pranzo
+  CAPO: La pausa pranzo, comunque, non esiste. Ma la mensa fa un caffè orribile.
+FINE
+SE spegnere
+  CAPO: E lo stabilizzatore, se vuoi spegnerlo, spegnilo. Poi non venire a piangere da me.
+FINE
+CAPO: Adesso i comandi sono tuoi. Vuoi provare da solo, dalla Terra, o preferisci ripassare qualcosa?
+SCELTA
+  OPZIONE [solo] Provo da solo, capo.
+    CAPO: Così si parla. Ti riporto sulla Terra: da qui in poi niente più io, solo tu e la nave.
+    CAPO: E non rompere la nave. Ci vediamo alla Luna. O sui giornali.
+  OPZIONE [ripassa] Preferisco ripassare qualcosa.
+    CAPO: Prudente. Mi piace. Ti riporto sulla Terra e ricominciamo il menu.
+    VAI: menu
+FINE
+CHIUDI: completato
+
+
+# ---------------------------------------------------------------- GIRO DELL'INTERFACCIA ("basic")
+ETICHETTA: basic
+TAPPA: basic
+CAPO: Dove sei? Sulla navetta Gabbiano, in orbita attorno alla Terra. Il mio capolavoro. Il tuo problema.
+CAPO: Ti faccio fare il giro dell'interfaccia. Occhi aperti: la nave non ha un tasto "aiuto".
+EVIDENZIA: prop
+CAPO: A sinistra, la barra verticale: il propellente. Quando finisce, finisce. Non c'è il distributore.
+EVIDENZIA: nulla
+EVIDENZIA: tempi
+CAPO: In alto a sinistra, due orologi: il tuo tempo di gioco e il tempo di missione. Uno è per te, l'altro per il registro.
+EVIDENZIA: nulla
+EVIDENZIA: tempo
+CAPO: In alto a destra, i tasti del tempo. Da 0 a 3: dal più lento al più veloce.
+EVIDENZIA: nulla
+EVIDENZIA: stab
+CAPO: Il cerchietto accanto: lo stabilizzatore. Acceso, la nave sta dritta da sola. Spento, fai tutto tu.
+EVIDENZIA: nulla
+EVIDENZIA: rot
+CAPO: La barra in alto: quanto stai ruotando. Il puntino bianco al centro vuol dire che sei tranquillo.
+EVIDENZIA: nulla
+EVIDENZIA: dist
+CAPO: Vicino ai corpi celesti, a che distanza sei. Quando la Luna esce dallo schermo, la distanza sta sul segnalino che la indica.
+EVIDENZIA: nulla
+EVIDENZIA: dati
+CAPO: E con Tab si apre il pannello dei dati: i numeri, i comandi, l'orbita di attracco. Per chi ama i numeri. O per chi si è perso.
+EVIDENZIA: nulla
+CAPO: Poi c'è la linea tratteggiata: è dove andrà la nave. Quella la guardi sempre. Tutto il resto, quando ti serve.
+VAI: menu
+
+
+# ---------------------------------------------------------------- ESPERTO
+ETICHETTA: esperto
+TAPPA: esperto
+CAPO: Ricordi tutto alla perfezione. ...Qualcuno ha davvero ascoltato. Mi commuovo.
+CAPO: Non ci credo nemmeno un po', ma il turno finisce tra poco e ho una pila di scartoffie.
+CAPO: Ti lascio i comandi. Non sfasciare niente: la nave costa più di te.
+CAPO: Auguri, recluta. Ci vediamo alla Luna.
+CHIUDI: esperto
+`;
+
+</script>
+<script>
+/* Motore del tutorial di Terra-Luna: interpreta il copione (tutorial.txt, istruzioni in testa al file), gestisce il riquadro radio, i comandi che si sbloccano a passi,
+   la lettura del comportamento del giocatore (tasti del tempo e della rotazione, tempi di attesa) e i dati anonimi per i tester.
+   Usa le variabili del gioco (ctx, AW, H, tempoIdx, stab, wNave, flip, ledBloccato, snd, nuova, ...): viene caricato dopo index.html come pagina unica. */
+
+const TUT_CHIAVE = 'terraluna_tutorial_1', TUT_UNA_VOLTA = false;   // true: il tutorial compare solo al primo avvio (per ora disattivato: parte sempre, cosi' si puo' collaudare)
+const TUT_CMD = { tempo: ['Digit0', 'Digit1', 'Digit2', 'Digit3', 'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3'], tempo1: ['Digit1', 'Numpad1'], tempo3: ['Digit3', 'Numpad3'], tempo01: ['Digit0', 'Digit1', 'Numpad0', 'Numpad1'], spinta: ['ArrowUp', 'KeyW'], rot: ['KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'], stab: ['KeyP'], flip: ['Space'] };
+const TUT_FATTI = ['anticipo', 'aiutato', 'lento', 'stabOn', 'veloce', 'rotOk', 'tempo3', 'tre', 'su1', 'rot', 'stab', 'flip', 'centrato', 'inFin', 'spingo', 'prua', 'inSOI', 'traiOk', 'traiPreciso', 'traiSchianto', 'traiPoca', 'traiTroppa', 'spento',
+  'legata', 'allontana', 'orbita', 'orbitaOk', 'vicino', 'quotaOk', 'fallito'];
+const TUT_NUM = ['aiutiTot', 'tempo', 'attesa', 'secSu1', 'secAllin', 'tAtt', 'ttFin', 'ttDs', 'tent', 'ttMin', 'eqCs', 'rotTocchi', 'vietati', 'periDs', 'periMin', 'raKm', 'rpKm', 'quotaKm', 'altKm'];
+const TUT_BARE = { SPEGNI: 'x0', ACCENDI: 'x1', STABILE: 'st', MARCA: 'm', RIPARTI: 'rp', TENTATIVO: 'tn', GIRA: 'fl', AGGANCIA: 'ag' };
+
+// ---------------------------------------------------------------- lettura del copione
+// Voci: ['d', testo, chi, 'fix'?, varianti?] battuta · ['s', [{ tuo, flag, items }]] scelta · ['u', cmd] sblocca · ['b', cmd] blocca · ['a', cond, aiuti...] attesa · ['?', cond, si, no] · ['f', flag] imposta · ['rt', sec, frasi...] incitamenti
+// ['e', nome] etichetta · ['v', nome] salta · ['x0'/'x1'] spegni/accendi · ['t', n] tempo · ['st'] nave stabile · ['m'] marca · ['z', s] pausa · ['c', esito] chiudi · ['tp', nome] tappa · ['ev', sezione] evidenzia
+// ['ru', tasto, s] il capo ruota · ['sp', cond] il capo spinge · ['fl'] il capo gira · ['sv'/'ld', nome] salva/ricarica la scena · ['or', n] orbita obiettivo · ['co', min, max] correzione di rotta · ['ag'] aggancio · ['rp'] riparti · ['tn'] tentativo
+function tutParse(testo) {
+  const righe = testo.split('\n').map((l, i) => ({ n: i + 1, t: l.trim() })).filter(r => r.t && !r.t.startsWith('#')), flags = new Set(), atomi = [], salti = [], carichi = [], salvati = new Set(); let k = 0, liv = 0;
+  const err = (r, m) => { throw new Error('riga ' + (r ? r.n : 'finale') + ': ' + m); };
+  const chiude = (t, fin) => fin.some(f => t === f || t.startsWith(f + ' '));
+  const cond = (r, c) => { c.split(/\s+O\s+|\s+E\s+/).forEach(x => { x = x.trim().replace(/^NON\s+/, ''); const m = x.match(/^(\w+)\s*(>=|<=|=|>|<)\s*(\d+)$/); atomi.push({ r, a: m ? m[1] : x, num: !!m }); }); return c; };
+  function blocco(fin) { const out = []; liv++; while (k < righe.length && !chiude(righe[k].t, fin)) out.push(...istruzione()); liv--; return out; }
+  function fine() { if (!righe[k] || righe[k].t !== 'FINE') err(righe[k] || righe[k - 1], 'manca FINE'); k++; }
+  function istruzione() { const r = righe[k], out = voce(); out.forEach(it => { if (it.riga === undefined) it.riga = r.n; }); return out; }   // ogni voce ricorda la riga del copione da cui viene (per gli errori e per l'albero delle scelte)
+  function voce() {
+    const r = righe[k++], t = r.t; let m;
+    if (TUT_BARE[t]) return [[TUT_BARE[t]]];
+    if (t === 'INVIO') return [];                                                      // non serve piu': ogni battuta del capo aspetta INVIO da sola
+    if (t === 'SCELTA') { const opz = []; while (righe[k] && righe[k].t !== 'FINE') { const o = righe[k]; m = o.t.match(/^OPZIONE(?:\s*\[(\w+)\])?\s+(.+)$/); if (!m) err(o, 'dentro SCELTA ci vogliono righe OPZIONE'); k++; if (m[1]) flags.add(m[1]); opz.push({ tuo: m[2], flag: m[1] || null, items: blocco(['OPZIONE', 'FINE']) }); }
+      fine(); if (opz.length < 1 || opz.length > 6) err(r, 'una SCELTA vuole da 1 a 6 opzioni'); return [['s', opz]]; }
+    if (t.startsWith('SE ')) { const c = cond(r, t.slice(3).trim()), si = blocco(['ALTRIMENTI', 'FINE']), nx = righe[k];
+      if (nx && nx.t.startsWith('ALTRIMENTI SE ')) { righe[k] = { n: nx.n, t: 'SE ' + nx.t.slice(14) }; return [['?', c, si, istruzione()]]; }          // catena: il FINE lo consuma l'ultimo SE
+      if (nx && nx.t === 'ALTRIMENTI') { k++; const no = blocco(['FINE']); fine(); return [['?', c, si, no]]; } fine(); return [['?', c, si, []]]; }
+    if (['FINE', 'ALTRIMENTI', 'OPZIONE'].includes(t.split(' ')[0])) err(r, t.split(' ')[0] + ' fuori posto');
+    m = t.match(/^([A-ZÀ-Ü][A-ZÀ-Ü0-9_ ]*):\s*(.*)$/); if (!m) err(r, 'riga non riconosciuta: ' + t.slice(0, 40));
+    const nome = m[1].trim(), arg = m[2].trim(), num = () => { const v = parseFloat(arg.replace(',', '.')); if (isNaN(v)) err(r, nome + ' vuole un numero'); return v; };
+    if (nome === 'IMPOSTA') { flags.add(arg); return [['f', arg]]; }
+    if (nome === 'BLOCCA') { if (!TUT_CMD[arg]) err(r, 'BLOCCA vuole tempo, rot, stab, spinta o flip'); return [['b', arg]]; }
+    if (nome === 'SBLOCCA') { if (!TUT_CMD[arg]) err(r, 'SBLOCCA vuole tempo, rot, stab, spinta o flip'); return [['u', arg]]; }
+    if (nome === 'ATTENDI') { const v = arg.split('|').map(x => x.trim()); cond(r, v[0]); return [['a', ...v]]; }
+    if (nome === 'SPINGI') { if (!arg) err(r, 'SPINGI vuole una condizione: il capo tiene premuta la spinta finche\' e\' vera (SPINGI: eqCs>=175)'); cond(r, arg); return [['sp', arg]]; }
+    if (nome === 'ETICHETTA') { if (liv !== 1) err(r, 'ETICHETTA va scritta fuori da ogni SE e SCELTA'); return [['e', arg]]; }
+    if (nome === 'VAI') { salti.push({ r, a: arg }); return [['v', arg]]; }
+    if (nome === 'SALVA') { salvati.add(arg); return [['sv', arg]]; }
+    if (nome === 'CARICA') { carichi.push({ r, a: arg }); return [['ld', arg]]; }
+    if (nome === 'ORBITA') { const v = arg === 'auto' ? 0 : parseInt(arg, 10); if (!(v >= 0 && v <= 3)) err(r, 'ORBITA vuole 1, 2, 3 oppure auto'); return [['or', v]]; }
+    if (nome === 'CORREGGI') { const v = arg.split(/\s+/).map(x => parseFloat(x)); if (v.length !== 2 || v.some(isNaN)) err(r, 'CORREGGI vuole la quota minima e massima (km): CORREGGI: 250 500'); return [['co', v[0], v[1]]]; }
+    if (nome === 'TEMPO') { const v = num(); if (![0, 1, 2, 3].includes(v)) err(r, 'TEMPO vuole 0, 1, 2 o 3'); return [['t', v]]; }
+    if (nome === 'RUOTA' && arg.toUpperCase() === 'FERMA') return [['ru', 'FERMA', 6]];
+    if (nome === 'RUOTA') { const v = arg.split(/\s+/); v[0] = v[0].toUpperCase(); if (!['A', 'D', 'SX', 'DX'].includes(v[0]) || isNaN(parseFloat(v[1]))) err(r, 'RUOTA vuole SX o DX e i secondi: RUOTA: SX 0.3'); return [['ru', v[0] === 'A' || v[0] === 'SX' ? 'KeyA' : 'KeyD', parseFloat(v[1])]]; }
+    if (nome === 'CONTO') { if (!arg) err(r, 'CONTO vuole un testo'); return [['d', arg, 'CAPO', 'fix']]; }
+    if (nome === 'RIPETI') { const v = arg.split('|').map(x => x.trim()), sec = parseFloat(v[0].replace(',', '.')); if (isNaN(sec) || v.length < 2 || v.slice(1).some(x => !x)) err(r, 'RIPETI vuole i secondi e delle frasi: RIPETI: 3 | frase | frase'); return [['rt', sec, ...v.slice(1)]]; }
+    if (nome === 'PAUSA') return [['z', num()]];
+    if (nome === 'CHIUDI') return [['c', arg]]; if (nome === 'TAPPA') return [['tp', arg]]; if (nome === 'EVIDENZIA') return [['ev', arg]];
+    if (!arg) err(r, 'battuta vuota');
+    const v = arg.split(/\s+\|\|\s+/); return [['d', v[0], nome, null, v.length > 1 ? v : null]];   // "testo || testo la seconda volta || testo la terza": il capo ricorda di averla gia' detta
+  }
+  const items = blocco([]); if (k < righe.length) err(righe[k], 'istruzione inattesa');
+  const etichette = {}; items.forEach((it, i) => { if (it[0] === 'e') etichette[it[1]] = i; });
+  salti.forEach(x => { if (etichette[x.a] === undefined) err(x.r, 'VAI: etichetta "' + x.a + '" non trovata (le etichette stanno fuori da ogni SE e SCELTA)'); });
+  carichi.forEach(x => { if (!salvati.has(x.a)) err(x.r, 'CARICA: nessun SALVA con il nome "' + x.a + '"'); });
+  atomi.forEach(x => { if (!flags.has(x.a) && !(x.num ? TUT_NUM : TUT_FATTI).includes(x.a)) err(x.r, 'condizione sconosciuta: "' + x.a + '" (non e\' un fatto del gioco ne\' un\'etichetta di una OPZIONE o di IMPOSTA)'); });
+  return { items, etichette };
+}
+
+// ---------------------------------------------------------------- stato e flusso
+let rRadio = null, rScelte = [];
+const TUT_FATTI0 = { aiuti: 0, attesa: 0, anticipo: false };
+const TUT_GIOCO = ['KeyW', 'KeyA', 'KeyD', 'KeyP', 'Space', 'KeyO', 'KeyB', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ...TUT_CMD.tempo];   // tasti del gioco: se premuti quando non sono ancora accesi contano come "vietati"
+const tutAttivo = () => !!tut && !tut.fine;
+const tutHa = n => tut.sbloc.has(n) || (n === 'tempo' && (tut.sbloc.has('tempo1') || tut.sbloc.has('tempo3') || tut.sbloc.has('tempo01')));   // il pannello del tempo e' acceso anche se e' sbloccato un solo tasto
+const tutPermesso = k => !tut.spento && (['KeyN'].includes(k) || Object.keys(TUT_CMD).some(n => tut.sbloc.has(n) && TUT_CMD[n].includes(k)));
+let bipG = null;
+function tutBlip(ms, tu) { snd.play((c, o, t) => {                                   // cinguettio digitale cristallino: un breve trillo di sinusoidi acute, un impulso per carattere, finche' il testo si compone
+  const g = c.createGain(); g.gain.value = 1; bipG = g; g.connect(o);
+  const eco = c.createDelay(0.3); eco.delayTime.value = 0.07; const fb = c.createGain(); fb.gain.value = 0.28; const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000; lp.connect(fb); fb.connect(eco); eco.connect(lp); lp.connect(g);
+  const sc = tu ? [131, 147, 175, 196, 220, 262, 294] : [261, 293, 349, 392, 440, 523, 587], n = Math.max(1, Math.floor(ms / 25)); let f = tu ? 175 : 349;
+  for (let k = 0; k < n; k++) { if (k % (tu ? 3 : 2) === 0) f = sc[Math.floor(Math.random() * sc.length)]; const ti = t + k * 0.025;
+    if (tu) { const x = c.createOscillator(), e = c.createGain(), ff = k % 3 === 1 ? f * 1.5 : f;      // il giocatore: un'ottava sotto, onda triangolare e un "boing" in salita a ogni impulso, con una quinta ogni tre: un po' sciocco
+      x.type = 'triangle'; x.frequency.setValueAtTime(ff * 0.82, ti); x.frequency.exponentialRampToValueAtTime(ff * 1.12, ti + 0.02); e.gain.setValueAtTime(0.0001, ti); e.gain.exponentialRampToValueAtTime(0.034, ti + 0.006); e.gain.exponentialRampToValueAtTime(0.0001, ti + 0.024);
+      x.connect(e); e.connect(g); e.connect(lp); x.start(ti); x.stop(ti + 0.03); continue; }
+    [[1, 0.025], [2, 0.0075]].forEach(([m, v]) => { const x = c.createOscillator(), e = c.createGain(); x.type = 'sine'; x.frequency.value = f * m; e.gain.setValueAtTime(0.0001, ti); e.gain.exponentialRampToValueAtTime(v, ti + 0.005); e.gain.exponentialRampToValueAtTime(0.0001, ti + 0.022);
+      x.connect(e); e.connect(g); e.connect(lp); x.start(ti); x.stop(ti + 0.03); }); } }, 0, 0.8); }
+const tutBipTaci = () => { try { if (bipG) { bipG.gain.cancelScheduledValues(0); bipG.gain.setTargetAtTime(0, bipG.context.currentTime, 0.02); } } catch (e) {} };
+function tutAvvia() {
+  let p; try { p = tutParse(TUT_TESTO); } catch (e) { p = { items: [['d', 'ERRORE nel copione (tutorial.txt), ' + e.message + '. Correggi il file e ricostruisci il gioco.', 'SISTEMA']], etichette: {} }; }
+  tut = { i: -1, script: p.items, etichette: p.etichette, flags: new Set(), scelteFatte: [], aiutiTot: 0, vietati: 0, fine: false, fatti: { ...TUT_FATTI0 }, sbloc: new Set(), spento: false, evid: new Set(), dette: {}, salvati: {},
+    visti: new Set([tempoIdx]), rotOk: false, tent: 0, flipVisto: false, riga: null, scelte: null, sel: 0, att: null, attDelay: 0, coda: [], premuti: [], marca: 0, rotTocchi: 0, rotBase: 0, ultRot: 0, t0: performance.now(), tappe: [], loggato: false, storia: [], allT: 0, allFuori: 0, ripeti: null };
+  tutAvanza();
+}
+const tutProssimo = consuma => { const l = tut.coda.length ? tut.coda : null; if (consuma) return l ? l.shift() : tut.script[++tut.i]; return l ? l[0] : tut.script[tut.i + 1]; };
+// le voci che seguono la battuta, senza quelle che non fermano il flusso (SBLOCCA, MARCA, RIPETI): se la prima e' un ATTENDI la battuta e' quella che chiede l'azione e lo sblocco avviene alla sua fine
+const tutSeguenti = () => [...tut.coda, ...tut.script.slice(tut.i + 1, tut.i + 14)].filter(x => x[0] !== 'u' && x[0] !== 'm' && x[0] !== 'rt');
+// stato del gioco che si salva e si ricarica (indietro con Backspace, SALVA / CARICA del copione)
+const tutGioco = () => ({ S: { ...S }, wNave, rateUlt, tempoIdx, stab, flip, warpUlt, traccia: traccia.slice() });
+function tutGiocoApplica(g) {
+  Object.assign(S, g.S); wNave = g.wNave; rateUlt = g.rateUlt; tempoIdx = g.tempoIdx; stab = g.stab; flip = g.flip; warpUlt = g.warpUlt; traccia = g.traccia.slice(); Object.keys(tasti).forEach(k => { tasti[k] = false; });
+  spingendo = false; tqUlt = 0; boom = null; risultato = null; esitoSuonato = false; agg = null; tPrev = -1e9; MAG_ROT.bloccato = false; ledBloccato = false; tut.forza = null; tut.t1 = 0; tutBipTaci();
+}
+// indietro (Backspace): a ogni battuta del capo e a ogni attesa di un'azione si salva lo stato del tutorial e del gioco; tornare indietro riporta all'inizio del passo precedente, azioni comprese
+const tutCopia = () => ({ i: tut.i, coda: tut.coda.slice(), flags: new Set(tut.flags), scelteFatte: tut.scelteFatte.slice(), sbloc: new Set(tut.sbloc), evid: new Set(tut.evid), visti: new Set(tut.visti), spento: tut.spento, aiutiTot: tut.aiutiTot, vietati: tut.vietati, fatti: { ...tut.fatti }, dette: { ...tut.dette },
+  rotOk: tut.rotOk, tent: tut.tent, flipVisto: tut.flipVisto, marca: tut.marca, rotTocchi: tut.rotTocchi, rotBase: tut.rotBase, premuti: tut.premuti.slice(), ultRot: tut.ultRot, ripeti: tut.ripeti, gioco: tutGioco() });
+function tutIndietro() {
+  if (!tut || tut.fine || !tut.storia.length) return; const cur = tut.storia.pop(), sn = tut.storia.pop() || cur;
+  Object.assign(tut, { i: sn.i, coda: sn.coda.slice(), flags: new Set(sn.flags), scelteFatte: sn.scelteFatte.slice(), sbloc: new Set(sn.sbloc), evid: new Set(sn.evid), visti: new Set(sn.visti), spento: sn.spento, aiutiTot: sn.aiutiTot, vietati: sn.vietati, fatti: { ...sn.fatti }, dette: { ...sn.dette },
+    rotOk: sn.rotOk, tent: sn.tent, flipVisto: sn.flipVisto, marca: sn.marca, rotTocchi: sn.rotTocchi, rotBase: sn.rotBase, premuti: sn.premuti.slice(), ultRot: sn.ultRot,
+    riga: null, scelte: null, att: null, attDelay: 0, t1: 0, allT: 0, allFuori: 0, ripeti: sn.ripeti });
+  tutGiocoApplica(sn.gioco); tutAvanza();
+}
+function tutAvanza() {
+  const now = performance.now();
+  for (let guardia = 0; guardia < 1000; guardia++) {
+    const pross = tutProssimo(false); if (pross && ((pross[0] === 'd' && pross[3] !== 'fix') || pross[0] === 'a')) { tut.storia.push(tutCopia()); if (tut.storia.length > 80) tut.storia.shift(); }
+    const it = tutProssimo(true);
+    if (!it) { tutFine('completato'); return; }
+    switch (it[0]) {
+      case 'd': { const seq = tutSeguenti(), tempoDopo = !!seq[0] && seq[0][0] === 't', nx = tempoDopo ? seq.find(x => x[0] !== 't') : seq[0],                  // la prossima voce (un TEMPO subito dopo la battuta non conta)
+          modo = it[3] === 'fix' ? 'fix' : nx && nx[0] === 'a' ? 'att' : it[2] === 'TU' ? 'tu' : nx && nx[0] === 's' ? 'sc' : tempoDopo && nx && nx[0] === 'z' ? 'att' : 'inv',   // come proseguire: subito all'attesa o alla scelta, da sola (conti alla rovescia, battute del giocatore, TEMPO e PAUSA di dimostrazione), oppure con INVIO
+          n = it[4] ? tut.dette[it[1]] || 0 : 0, testo = it[4] ? it[4][Math.min(n, it[4].length - 1)] : it[1];                                              // le battute con varianti: la seconda volta il capo se ne ricorda
+        if (it[4]) tut.dette[it[1]] = n + 1;
+        tut.riga = { chi: it[2] || 'CAPO', testo, t0: now, modo, righe: righeTesto(testo, Math.min(AW - 48, 620) - 32, 14).length }; tut.scelte = null; tutBipTaci();
+        for (let q = tutProssimo(false); q && q[0] === 't'; q = tutProssimo(false)) { tutProssimo(true); tempoIdx = q[1]; tut.visti.add(q[1]); }   // un TEMPO subito dopo la battuta parte mentre il capo sta ancora parlando
+        return; }
+      case 's': tut.scelte = it[1]; tut.sel = 0; tut.scelteT = now; return;
+      case 'a': { const rip = tut.ripeti; tut.ripeti = null; tut.att = { cond: it[1], t0: now, aiuti: rip ? [] : it.slice(2), n: 0, anticipo: tutCond(it[1]), rip, nR: 0, ord: [] }; return; }
+      case 'sp': tut.forza = { k: 'ArrowUp', cond: it[1], fine: now + 25000 }; tut.att = { cond: it[1], t0: now, aiuti: [], n: 0, anticipo: false, rip: null, nR: 0, ord: [] }; return;   // il capo tiene premuta la spinta finche' la condizione e' vera (al massimo 25 secondi)
+      case 'rt': tut.ripeti = { ogni: it[1], frasi: it.slice(2) }; break;
+      case 'z': tut.attDelay = now + it[1] * 1000; return;
+      case 'e': break;
+      case 'v': { const idx = tut.etichette[it[1]]; tut.coda = []; tut.att = null; tut.scelte = null; tut.attDelay = 0; tut.i = idx; break; }
+      case '?': tut.coda.unshift(...(tutCond(it[1]) ? it[2] : (it[3] || []))); break;                                  // battute che dipendono da quello che il giocatore ha fatto o dallo stato
+      case 'u': tut.sbloc.add(it[1]); if (it[1] === 'flip') tut.flipVisto = false; if (it[1] === 'rot') tut.rotOk = false; break; case 'b': tut.sbloc.delete(it[1]); if (it[1] === 'tempo') { tut.sbloc.delete('tempo1'); tut.sbloc.delete('tempo3'); tut.sbloc.delete('tempo01'); } if (it[1] === 'rot') { tut.rotOk = false; tut.ultRot = 0; } break; case 'f': tut.flags.add(it[1]); break;
+      case 'tn': tut.tent++; break; case 'rp': tut.tent = 0; nuova(); tutStabile(); tut.flipVisto = false; break; case 'ru': tut.forza = { k: it[1], fine: now + it[2] * 1000 }; break; case 'x0': tut.spento = true; tut.att = null; break; case 'x1': tut.spento = false; break;
+      case 't': tempoIdx = it[1]; tut.visti.add(it[1]); break; case 'st': tutStabile(); break;
+      case 'fl': stab = false; flip = S.psi + Math.PI; tut.flipVisto = false; break;                                                // il capo preme il flip al posto tuo
+      case 'sv': tut.salvati[it[1]] = tutGioco(); break; case 'ld': { const g = tut.salvati[it[1]]; if (g) tutGiocoApplica(g); break; }
+      case 'or': selOrb = it[1] > 0 ? it[1] - 1 : null; break;
+      case 'co': { const c = sim.correzione(it[1], it[2], 0.5, 8); if (c.serve && c.dv) { S.vx += Math.cos(c.dir) * c.dv; S.vy += Math.sin(c.dir) * c.dv; S.dv = Math.max(0, S.dv - c.dv); S.dvUsato += c.dv; } tPrev = -1e9; break; }   // piccola correzione di rotta: il passaggio vicino alla Luna cade fra le due quote
+      case 'ag': if (!agg && !S.esito && legataLuna(sim.elLuna())) avviaAgganciamento(bersaglio()); break;
+      case 'm': tut.rotBase = tut.rotTocchi; tut.marca = tut.premuti.length; tut.allT = 0; tut.allFuori = 0; break;
+      case 'c': tutFine(it[1]); return; case 'tp': tut.tappe.push([it[1], Math.round((now - tut.t0) / 100) / 10]); break;
+      case 'ev': if (it[1] === 'nulla') tut.evid.clear(); else tut.evid.add(it[1]); break;
+    }
+  }
+}
+function tutStabile() {                                                  // nave di nuovo stabile: tempo 1, stabilizzatore acceso, prua lungo il moto, nessuna rotazione
+  tempoIdx = 1; stab = true; flip = null; const d0 = dominante(), rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * TEMPI[1].v; S.psi = Math.atan2(d0.vy, d0.vx); wNave = rr; rateUlt = rr; warpUlt = 0;
+}
+function tutLog(esito) {
+  if (!tut || tut.loggato) return; tut.loggato = true; const q = x => Math.round(x * 10) / 10;
+  logEvent('tutorial', { result: esito, secondi: q((performance.now() - tut.t0) / 1000), aiuti: tut.aiutiTot, vietati: tut.vietati, tastiTempo: tut.premuti.length, tastiRot: tut.rotTocchi, scelte: tut.scelteFatte.join(' '), tappe: tut.tappe.map(x => x[0] + ':' + x[1]).join(' '), viewport: innerWidth + 'x' + innerHeight });
+}
+function tutFine(esito) { if (!tut || tut.fine) return; tutLog(esito || 'completato'); tut.fine = true; try { localStorage.setItem(TUT_CHIAVE, '1'); } catch (e) {} rRadio = null; rScelte = []; nuova(); }
+addEventListener('pagehide', () => { if (tutAttivo()) tutLog('abbandonato'); });
+// INVIO (o clic sul riquadro) fa proseguire il dialogo; se la battuta si sta ancora scrivendo la completa soltanto
+function tutInvio() {
+  if (!tut || tut.fine || !tut.riga) return; const now = performance.now(), tot = tut.riga.testo.length * 25;
+  if (now - tut.riga.t0 < tot) { tut.riga.t0 = now - tot; tutBipTaci(); return; }                                // prima completa la battuta che sta comparendo
+  if (tut.scelte) { if (now - tut.scelteT < 700) return; tutScegli(tut.sel); return; }           // appena compaiono le risposte, un INVIO ancora in corsa non ne sceglie una senza averla letta
+  if (tut.att || tut.attDelay) return; tut.riga.modo = 'fatto'; tutAvanza();
+}
+function tutScegli(i) { const o = tut.scelte && tut.scelte[i]; if (!o) return; tut.scelte = null; if (o.flag) { tut.flags.add(o.flag); tut.scelteFatte.push(o.flag); } tut.coda.unshift(['d', o.tuo, 'TU'], ...o.items); tutAvanza(); }
+
+// ---------------------------------------------------------------- lettura del comportamento del giocatore
+function tutTasto(k) {                                                   // chiamata a ogni tasto permesso (o clic sui tasti del tempo)
+  const now = performance.now();
+  if (TUT_CMD.tempo.includes(k)) { const d = +k.slice(-1); tut.premuti.push({ d, t: now }); tut.visti.add(d); }
+  else if (TUT_CMD.rot.includes(k)) { tut.rotTocchi++; tut.ultRot = now; }
+}
+function tutAtomo(a) {
+  const m = a.match(/^(\w+)\s*(>=|<=|=|>|<)\s*(\d+)$/), f = tut.fatti, now = performance.now(), pr = tut.premuti.slice(tut.marca);
+  if (m) { const nome = m[1], n = +m[3], tp = prev && prev.fine === 'periluna' && prev.tMin > S.t ? prev.tMin - S.t : null, el = sim.elLuna();
+    const v = nome === 'ttMin' ? Math.floor(tutTT() / 60) : nome === 'tent' ? tut.tent : nome === 'ttDs' ? Math.ceil(tutTT() / TEMPI[tempoIdx].v * 10) : nome === 'ttFin' ? Math.ceil(tutTT() / TEMPI[tempoIdx].v) : nome === 'eqCs' ? Math.round(tutEq() * 100) : nome === 'tAtt' ? Math.floor(tut.att ? (now - tut.att.t0) / 1000 : 0) : nome === 'secSu1' ? (tempoIdx === 1 && tut.t1 ? Math.floor((now - tut.t1) / 1000) : 0) : nome === 'aiutiTot' ? tut.aiutiTot : nome === 'tempo' ? tempoIdx : nome === 'attesa' ? Math.round(f.attesa)
+      : nome === 'rotTocchi' ? tut.rotTocchi - tut.rotBase : nome === 'secAllin' ? (tut.allT ? Math.floor((now - tut.allT) / 1000) : 0) : nome === 'vietati' ? tut.vietati
+      : nome === 'periDs' ? (tp === null ? 99999 : Math.ceil(tp / vEff() * 10)) : nome === 'periMin' ? (tp === null ? 99999 : Math.floor(tp / 60)) : nome === 'quotaKm' ? (tp === null ? 99999 : Math.round(prev.dMin - T.R_M))     // dal punto piu' vicino alla Luna: decimi di secondo reali, minuti di gioco, quota prevista
+      : nome === 'raKm' ? (legataLuna(el) ? Math.round(el.ra - T.R_M) : 99999) : nome === 'rpKm' ? (legataLuna(el) ? Math.round(el.rp - T.R_M) : 0) : nome === 'altKm' ? Math.round(el.d - T.R_M) : 0;
+    return m[2] === '>=' ? v >= n : m[2] === '<=' ? v <= n : m[2] === '>' ? v > n : m[2] === '<' ? v < n : v === n; }
+  switch (a) { case 'anticipo': return f.anticipo; case 'aiutato': return f.aiuti > 0; case 'lento': return f.attesa > 30; case 'stabOn': return stab; case 'veloce': return tempoIdx >= 2; case 'rotOk': return tut.rotOk; case 'spento': return tut.spento;
+    case 'tempo3': return new Set([...pr.map(x => x.d), tempoIdx]).size >= 3; case 'tre': return pr.some(x => x.d === 3); case 'su1': return tempoIdx === 1; case 'rot': return tut.rotOk; case 'stab': return tut.sbloc.has('stab') && stab && ledBloccato; case 'inFin': return S.dvUsato < 0.05 && mod2pi(betaNave() - inizioSpinta()) < (DV_TLI / sim.P.acc) * (nTerra() - T.N_M); case 'spingo': return spingendo; case 'prua': { const d0 = dominante(); return Math.cos(S.psi - Math.atan2(d0.vy, d0.vx)) > 0; }
+    case 'inSOI': { const m = sim.luna(); return S.dvUsato > 0.5 && Math.hypot(S.x - m.x, S.y - m.y) < T.SOI_M; }
+    case 'traiPreciso': return !!prev && prev.fine === 'periluna' && prev.dMin - T.R_M >= 100 && prev.dMin - T.R_M <= 3500;
+    case 'traiOk': case 'traiSchianto': case 'traiPoca': case 'traiTroppa': return tutTrai() === a;
+    case 'flip': return tut.flipVisto && flip === null; case 'centrato': return tut.sbloc.has('rot') && ledBloccato;
+    case 'legata': return legataLuna(sim.elLuna()); case 'orbita': return !!agg; case 'fallito': return !!S.esito;       // legata: la Luna ti tiene; orbita: agganciato all'orbita di attracco; fallito: schianto o nave persa
+    case 'allontana': { const m = sim.luna(); return !agg && S.dvUsato > 0.5 && sim.elLuna().d < T.SOI_M && (S.x - m.x) * (S.vx - m.vx) + (S.y - m.y) * (S.vy - m.vy) > 0; }          // dentro la sfera d'influenza e in allontanamento: ha gia' passato il punto piu' vicino
+    case 'quotaOk': return !!prev && prev.fine === 'periluna' && prev.dMin - T.R_M >= 100 && prev.dMin - T.R_M <= 650;       // il passaggio previsto e' una quota buona per l'arrivo
+    case 'orbitaOk': return corrisponde(bersaglio(), sim.elLuna());                                                           // l'orbita attorno alla Luna combacia con quella obiettivo: fra poco si aggancia
+    case 'vicino': { const el = sim.elLuna(), o = bersaglio(); return legataLuna(el) && Math.abs(el.rp - T.R_M - o.rp) <= 500 && Math.abs(el.ra - T.R_M - o.ra) <= 3000; } }          // legato alla Luna e quasi sull'orbita obiettivo
+  return tut.flags.has(a);
+}
+const tutCond = c => c.split(/\s+O\s+/).some(g => g.split(/\s+E\s+/).every(x => { x = x.trim(); return x.startsWith('NON ') ? !tutAtomo(x.slice(4).trim()) : tutAtomo(x); }));
+const tutTT = () => mod2pi(inizioSpinta() - betaNave()) / (nTerra() - T.N_M);                  // secondi di gioco alla partenza della finestra di lancio
+const tutEq = () => { const de = Math.hypot(S.x, S.y), eps = (S.vx * S.vx + S.vy * S.vy) / 2 - T.MU_E / de; return Math.sqrt(Math.max(0, 2 * (eps + T.MU_E / sim.P.r0))) - sim.v0; };   // spinta accumulata (km/s), come la barra
+function tutTrai() {                                                    // com'e' la traiettoria prevista dopo la spinta: giusta, schianto, spinta in eccesso o in difetto, o semplicemente storta (partenza fuori tempo)
+  const eq = tutEq(), alt = prev && prev.fine === 'periluna' ? prev.dMin - T.R_M : null;
+  if (alt !== null && alt < 100) return 'traiSchianto'; if (prev && prev.fine === 'schianto_luna') return 'traiSchianto';
+  if (eq > 1.84) return 'traiTroppa'; if (eq < 1.7) return 'traiPoca';
+  return alt !== null && alt <= 25000 ? 'traiOk' : 'traiStorta'; }          // la spinta e' giusta: il passaggio dalla Luna puo' essere un po' largo, si corregge in viaggio
+function tutPasso() {
+  if (!tut || tut.fine) return; const now = performance.now(); tut.visti.add(tempoIdx); if (tempoIdx !== 1) tut.t1 = 0; else if (!tut.t1) tut.t1 = now;
+  const rg = tut.riga; if (rg && !rg.bip && snd.pronto) { rg.bip = true; const resto = rg.testo.length * 25 - (now - rg.t0); if (resto > 60) tutBlip(resto, rg.chi === 'TU'); }   // capo e giocatore (con un suono diverso), anche la prima battuta appena l'audio e' acceso
+  if (tut.sbloc.has('rot')) { const wr = Math.abs(stab ? wNave - rateUlt : wNave); if (wr > 0.3) tut.rotOk = true; } if (flip !== null) tut.flipVisto = true;
+  if (tut.sbloc.has('rot')) { const d0 = dominante(), er = Math.abs(ang(Math.atan2(d0.vy, d0.vx) - S.psi));       // prua entro 15 gradi dalla direzione di moto (dove la terrebbe lo stabilizzatore); un'uscita sotto mezzo secondo si tollera
+    if (er < 0.2618) { if (!tut.allT) tut.allT = now; tut.allFuori = 0; } else if (tut.allT) { if (!tut.allFuori) tut.allFuori = now; if (now - tut.allFuori > 500) { tut.allT = 0; tut.allFuori = 0; } } } else { tut.allT = 0; tut.allFuori = 0; }
+  if (!tut.sbloc.has('spinta')) tasti.KeyW = tasti.ArrowUp = false;                                  // la spinta e' del giocatore solo quando il capo la sblocca
+  if (tut.forza) { const f = tut.forza;                                                              // il capo preme i tasti al posto tuo
+    if (f.cond) { if (tutCond(f.cond) || now >= f.fine) { tasti.ArrowUp = tasti.KeyW = false; tut.forza = null; if (tut.att && !tutCond(f.cond)) { tut.att = null; tutAvanza(); return; } } else { tasti.ArrowUp = true; tasti.KeyW = false; } }
+    else if (f.k === 'FERMA') { const w = stab ? wNave - rateUlt : wNave, k = w > 0 ? 'KeyD' : 'KeyA'; tasti.KeyA = tasti.KeyD = false; if (Math.abs(w) > 0.012 && now < f.fine) { tasti[k] = true; barraTocco = now; } else tut.forza = null; }
+    else if (now < f.fine) { tasti[f.k] = true; barraTocco = now; } else { tasti[f.k] = false; tut.forza = null; } }
+  if (tut.attDelay && now >= tut.attDelay) { tut.attDelay = 0; tutAvanza(); return; }
+  const r = tut.riga, attesa = { inv: 1e12, fix: 700, att: 250, tu: 1100, sc: 0 };            // sc: la scelta compare subito dopo che la battuta e' scritta
+  if (r && !tut.att && !tut.scelte && !tut.attDelay && r.modo !== 'fatto' && now - r.t0 >= r.testo.length * 25 + attesa[r.modo] + (r.righe > 2 && r.modo === 'tu' ? 2000 : 0)) { r.modo = 'fatto'; tutAvanza(); return; }          // le battute del giocatore, i conti alla rovescia e le richieste di azione passano da soli dopo la lettura
+  const a = tut.att; if (!a) return;
+  if (tutCond(a.cond)) { tut.fatti = { aiuti: a.n, attesa: (now - a.t0) / 1000, anticipo: a.anticipo }; tut.att = null; tutAvanza(); return; }
+  if (a.rip && now - a.t0 >= (a.nR + 1) * a.rip.ogni * 1000) {                                      // frasi di incitamento ogni tot secondi, senza INVIO, in ordine casuale (mai la stessa due volte di fila)
+    if (!a.ord.length) { const n = a.rip.frasi.length, o = Array.from({ length: n }, (_, i) => i).sort(() => Math.random() - 0.5); if (n > 1 && o[0] === a.ultF) o.push(o.shift()); a.ord = o; } a.ultF = a.ord.shift();
+    tut.riga = { chi: 'CAPO', testo: a.rip.frasi[a.ultF], t0: now, modo: 'att' }; a.nR++; }
+  if (a.n < a.aiuti.length && now - a.t0 > 20000 * (a.n + 1)) { tut.riga = { chi: 'CAPO', testo: a.aiuti[a.n++], t0: now, modo: 'att' }; tut.aiutiTot++; }
+}
+
+// ---------------------------------------------------------------- riquadro radio
+function righeTesto(s, maxW, size) { ctx.font = size + 'px ' + Aspetto.FONT; const out = []; let cur = ''; for (const w of s.split(' ')) { const pr = cur ? cur + ' ' + w : w; if (ctx.measureText(pr).width > maxW && cur) { out.push(cur); cur = w; } else cur = pr; } if (cur) out.push(cur); return out; }
+function tutDisegna() {
+  if (!tut || tut.fine || !tut.riga) { rRadio = null; rScelte = []; return; }
+  const A = Aspetto, now = performance.now(), r = tut.riga, bw = Math.min(AW - 48, 620), pad = 16, inner = bw - 2 * pad, tc = r.chi === 'TU' ? COL.warn : r.chi === 'SISTEMA' ? COL.bad : COL.ship;
+  const ls = righeTesto(r.testo, inner, 14), tot = r.testo.length, n = Math.min(tot, Math.floor((now - r.t0) / 25)), scrive = n < tot, sc = tut.scelte && !scrive ? tut.scelte.map(x => righeTesto(x.tuo, inner - 24, 13)) : null;
+  const bh = 40 + ls.length * 20 + 14 + (sc ? sc.reduce((a, l) => a + l.length * 18 + 8, 0) + 8 : 0), bx = 24, by = H - bh - 24;
+  ctx.save(); ctx.fillStyle = 'rgba(5,9,15,0.92)'; ctx.fillRect(bx, by, bw, bh); ctx.strokeStyle = tc; ctx.lineWidth = 1.2; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  ctx.fillStyle = tc; ctx.globalAlpha = 0.5; ctx.fillRect(bx, by, bw, 2); ctx.globalAlpha = 1;                              // filetto luminoso in testa
+  A.testo(ctx, r.chi === 'CAPO' ? 'CAPO  ·  CENTRO SPEDIZIONI' : r.chi, bx + pad, by + 22, tc, 11);
+  A.testo(ctx, '⌫ indietro   ESC salta', bx + bw - pad - 40, by + 22, COL.dim, 10, 'right');
+  for (let i = 0; i < 4; i++) { const h = scrive ? 3 + Math.random() * 9 : 3; ctx.fillStyle = scrive ? tc : COL.dim; ctx.fillRect(bx + bw - pad - 30 + i * 8, by + 26 - h, 4, h); }          // segnale della radio
+  let resto = n; ls.forEach((l, i) => { const t = resto >= l.length ? l : l.slice(0, Math.max(0, resto)); resto -= l.length + 1; A.testo(ctx, t, bx + pad, by + 50 + i * 20, COL.txt, 14); });
+  rScelte = []; let y = by + 50 + ls.length * 20 + 6;
+  if (sc) sc.forEach((l, i) => { const h = l.length * 18 + 4, att = i === tut.sel; rScelte.push({ x: bx + 8, y: y - 14, w: bw - 16, h: h + 6 });
+    if (att) { ctx.fillStyle = 'rgba(127,231,255,0.14)'; ctx.fillRect(bx + 8, y - 14, bw - 16, h + 6); }
+    l.forEach((t, j) => A.testo(ctx, (j === 0 ? (att ? '▸ ' : '  ') : '  ') + t, bx + pad, y + j * 18, att ? COL.txt : COL.dim, 13)); y += l.length * 18 + 8; });
+  if (!scrive && r.modo === 'inv' && !tut.scelte) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(now / 300); A.testo(ctx, 'INVIO ▸', bx + bw - pad, by + bh - 10, COL.dim, 10, 'right'); ctx.globalAlpha = 1; }
+  if (sc) A.testo(ctx, '↑ ↓ e INVIO, oppure clic', bx + bw - pad, by + bh - 10, COL.dim, 10, 'right');
+  ctx.restore(); rRadio = { x: bx, y: by, w: bw, h: bh };
+}
+
+</script>
+<script>
 // SPACE TRUCKER - minigioco Terra-Luna. Tutti i valori sono provvisori.
-// Comandi: W spinta (motore posteriore) · A/D ruota la nave (antioraria/oraria) · Spazio flip (mezzo giro) · 1/2 tempo · P pausa · O orbita obiettivo · N ritenta. Durante la spinta il tempo e' fisso a 60x.
+// Comandi: W spinta (motore posteriore) · A/D ruota la nave (antioraria/oraria) · Spazio flip (mezzo giro) · P stabilizzatore · 0-3 tempo (0 = tempo reale, non c'e' pausa) · O orbita obiettivo · N ritenta. Durante la spinta il tempo e' fisso a 60x.
 // Vista in un sistema che ruota con la Luna: la Luna sta ferma a destra e la traiettoria si curva verso di lei.
 const T = Transito, cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const COL = Aspetto.COL, snd = Suoni.crea();
-const DV_TLI = 1.75, TEMPI = [{ n: '600×', v: 600, k: 1 }, { n: '10.000×', v: 10000, k: 2 }], ORB = [{ n: 'Ellittica 300 × 5.000 km', rp: 300, ra: 5000 }, { n: 'Bassa circolare 300 km', rp: 300, ra: 300 }, { n: 'Alta circolare 2.000 km', rp: 2000, ra: 2000 }], TOLRP = 200, tolRa = o => Math.max(200, 0.1 * o.ra), TEMPO_SPINTA = 60, ACC = 0.002, AGG_MS = 6000, ALFA = 0.9, WMAX = 1.2;
-let W = 0, H = 0, PANEL = 280, AW = 0; function ridim() { const d = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; PANEL = Math.max(230, Math.min(300, Math.round(W * 0.3))); AW = W - PANEL; cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); } addEventListener('resize', ridim); ridim();
-let intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, pausa, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, stab = true, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
-function nuova() { sim = T.crea({ cattura: false, acc: ACC, r0: 20000, th0: Math.random() * 6.28, alfa0: Math.random() * 6.28 }); S = sim.S; fase0 = sim.faseIdeale(DV_TLI, 400); traccia = []; prev = null; tPrev = -1e9; notaLog = ''; esitoSuonato = false; tAllarme = 0; tReale = 0; risultato = null; nuoviRecord = null; tel = nuovaTel(); tempoIdx = 0; pausa = false; flip = null; wNave = (sim.v0 / sim.P.r0) * TEMPI[0].v; rateUlt = wNave; agg = null; stab = true; selOrb = null; ext = null; tUlt = 0; }
+const DV_TLI = 1.75, TEMPI = [{ v: 1, k: 0 }, { v: 600, k: 1 }, { v: 10800, k: 2 }, { v: 86400, k: 3 }], TEMPO_INI = 1, ORB = [{ n: 'Ellittica 300 × 5.000 km', rp: 300, ra: 5000 }, { n: 'Bassa circolare 300 km', rp: 300, ra: 300 }, { n: 'Alta circolare 2.000 km', rp: 2000, ra: 2000 }], TOLRP = 200, tolRa = o => Math.max(200, 0.1 * o.ra), TEMPO_SPINTA = 60, ACC = 0.002, AGG_MS = 6000, ALFA = 0.9, WMAX = 1.2;
+let W = 0, H = 0, PANEL = 280, AW = 0; function ridim() { const d = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; PANEL = Math.max(230, Math.min(300, Math.round(W * 0.3))); AW = W; /* la scena occupa tutto lo schermo: PANEL e' solo la larghezza del pannello dati a scomparsa (Tab) */ cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); } addEventListener('resize', ridim); ridim();
+let inizio = false, intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, boom = null, tut = null, tSenza = 0, barraTocco = -1e9, barraA = 0, warpUlt = 0, stab = true, datiAperti = false, spintaT = -1e9, ledBloccato = false, tlackT = -1e9, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
+const ROT_K = 0.002;   // km: (raggio d'inerzia^2 / braccio) = 2,5^2 / 3 m. Ogni variazione di rotazione dOmega (rad/s) costa ROT_K * |dOmega| km/s di propellente, a mano o con lo stabilizzatore
+const LED_ENTRA = 0.07, LED_ESCE = 0.15, LED_LENTO = 0.45;   // rad/s: soglia per cadere nello zero, soglia per uscirne, massima velocita' di variazione (rad/s^2) per essere catturato
+const MAG_ROT = Aspetto.creaMagnete(LED_ENTRA, LED_ESCE, LED_LENTO);   // la rotazione ha un magnete sullo zero: vale in tutto il gioco, non solo nel tutorial
+function nuova() { MAG_ROT.bloccato = false; MAG_ROT.ultCmd = 0; ledBloccato = false; sim = T.crea({ cattura: false, acc: ACC, r0: 20000, th0: Math.random() * 6.28, alfa0: Math.random() * 6.28 }); S = sim.S; fase0 = sim.faseIdeale(DV_TLI, 400); traccia = []; prev = null; tPrev = -1e9; notaLog = ''; esitoSuonato = false; tAllarme = 0; tReale = 0; risultato = null; nuoviRecord = null; tel = nuovaTel(); tempoIdx = TEMPO_INI; flip = null; wNave = (sim.v0 / sim.P.r0) * TEMPI[TEMPO_INI].v; rateUlt = wNave; agg = null; boom = null; tSenza = 0; warpUlt = 0; stab = true; selOrb = null; ext = null; tUlt = 0; }
 const mod2pi = x => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), ang = d => Math.atan2(Math.sin(d), Math.cos(d));
 const betaNave = () => mod2pi(Math.atan2(S.y, S.x) - sim.luna().a), nTerra = () => sim.v0 / sim.P.r0;
 const inizioSpinta = () => mod2pi(fase0.beta - 0.5 * (DV_TLI / sim.P.acc) * (nTerra() - T.N_M));
 // ---- raccolta dati anonimi dei test (stesso foglio del docking: nessun IP, nessun cookie, solo un codice casuale per sessione)
-const VERSION = 'T0.1';
+const VERSION = 'T0.2';
 const LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';
 const LOCALE = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);           // in locale non si invia nulla (salvo ?log=1)
 const LOG_ON = !!LOG_URL && (!LOCALE || new URLSearchParams(location.search).get('log') === '1'), SESSIONE = Math.random().toString(36).slice(2, 10);
@@ -598,23 +1758,31 @@ function leggiArchivio() { try { const a = JSON.parse(localStorage.getItem(CHIAV
 function salvaArchivio(a) { try { localStorage.setItem(CHIAVE, JSON.stringify(a)); } catch (e) {} }
 function recordOrbita(nome) { const ok = leggiArchivio().storico.filter(r => r.esito === 'orbita' && r.orbita === nome); return { tempo: ok.length ? Math.min(...ok.map(r => r.tMissione)) : null, dv: ok.length ? Math.min(...ok.map(r => r.dv)) : null, n: ok.length }; }
 function chiudiTentativo(esito, orbita) {                                    // chiamata una volta sola, alla fine: registra e confronta con i record
-  if (risultato) return; risultato = { esito, orbita: orbita || null, tReale, tMissione: S.t, dv: S.dvUsato, dvResiduo: S.dv, data: Date.now() }; nuoviRecord = { tempo: false, dv: false, prima: null };
+  if (risultato) return; risultato = { esito, orbita: orbita || null, tReale, tMissione: S.t, dv: S.dvUsato, dvResiduo: S.dv, data: Date.now() }; nuoviRecord = { tempo: false, dv: false, prima: null }; if (tutAttivo()) return;   // durante il tutorial niente record, niente dati, niente riepilogo
   const a = leggiArchivio(); if (esito === 'orbita') { const r = recordOrbita(orbita); nuoviRecord = { tempo: r.tempo === null || S.t < r.tempo, dv: r.dv === null || S.dvUsato < r.dv, prima: r }; }
   a.storico.push(risultato); if (a.storico.length > 100) a.storico.shift(); salvaArchivio(a); if (nuoviRecord.tempo || nuoviRecord.dv) snd.record();
   if (tReale >= 5) { tentativo++; const q = x => Math.round(x * 10) / 10; logEvent('terraluna', { attempt: tentativo, result: esito, orbita: orbita || '', tMissione: Math.round(S.t / 864) / 100, tReale: q(tReale), dv: Math.round(S.dvUsato * 100) / 100, dvResiduo: Math.round(S.dv * 100) / 100,
     presses: tel.presses, thrust: q(tel.thrust), rot: q(tel.rot), flips: tel.flips, bursts: tel.bursts, tempo2: Math.round(100 * tel.t2 / Math.max(tReale, 1)), pausa: q(tel.pausa), firstThrust: tel.first === null ? '' : q(tel.first), orbite: tel.orbite,
     record: nuoviRecord.tempo && nuoviRecord.dv ? 'entrambi' : nuoviRecord.tempo ? 'tempo' : nuoviRecord.dv ? 'propellente' : 'no', sound: snd.attivo ? 'si' : 'no', viewport: innerWidth + 'x' + innerHeight }); if (LOG_ON) notaLog = 'dati anonimi inviati: tentativo ' + tentativo; } }
+// ---- tutorial del primo viaggio: copione in tutorial.txt, motore in tutorial-motore.js
 // ---- comandi
-addEventListener('keydown', e => { const k = e.code; snd.init(); if (tasti[k]) return; tasti[k] = true; if (!intro && !risultato && tel) { if (['KeyW', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(k)) tel.presses++; if (k === 'KeyW' || k === 'ArrowUp') tel.bursts++; if (k === 'Space') tel.flips++; if (k === 'KeyO') tel.orbite++; }
-  if (k === 'Digit1') tempoIdx = 0; if (k === 'Digit2') tempoIdx = 1;
+addEventListener('keydown', e => { const k = e.code; snd.init();
+  if (inizio) { if (k === 'Enter' && !e.repeat) { e.preventDefault(); avviaTutorial(); } return; }
+  if (tutAttivo()) { if (k === 'Space') e.preventDefault(); if (e.repeat) return; if (k === 'Enter') { e.preventDefault(); tutInvio(); return; } if (k === 'Escape') { tutFine('saltato'); return; } if (k === 'Backspace') { e.preventDefault(); tutIndietro(); return; }
+    if ((k === 'ArrowUp' || k === 'ArrowDown') && tut.scelte) { e.preventDefault(); if (tut.riga && performance.now() - tut.riga.t0 >= tut.riga.testo.length * 25) tut.sel = (tut.sel + (k === 'ArrowDown' ? 1 : tut.scelte.length - 1)) % tut.scelte.length; return; }
+    if (!tutPermesso(k)) { if (!tut.spento && TUT_GIOCO.includes(k)) tut.vietati++; return; } tutTasto(k); }
+  if (['KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight', 'KeyP', 'Space'].includes(k)) barraTocco = performance.now(); if (tasti[k]) return; tasti[k] = true; if (!intro && !risultato && tel) { if (['KeyW', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(k)) tel.presses++; if (k === 'KeyW' || k === 'ArrowUp') tel.bursts++; if (k === 'Space') tel.flips++; if (k === 'KeyO') tel.orbite++; }
+  { const n = ['Digit0', 'Digit1', 'Digit2', 'Digit3'].indexOf(k), m = ['Numpad0', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(k); if (n >= 0) tempoIdx = n; else if (m >= 0) tempoIdx = m; }
   if (k === 'KeyO') selOrb = selOrb === null ? 0 : selOrb >= ORB.length - 1 ? null : selOrb + 1;
-  if (k === 'KeyP') pausa = !pausa; if (k === 'Equal' || k === 'BracketRight' || k === 'NumpadAdd') TEMPI[tempoIdx].v = Math.min(86400, Math.round(TEMPI[tempoIdx].v * 1.25 / 10) * 10); if (k === 'Minus' || k === 'BracketLeft' || k === 'NumpadSubtract') TEMPI[tempoIdx].v = Math.max(60, Math.round(TEMPI[tempoIdx].v / 1.25 / 10) * 10); if (k === 'KeyB') barreNascoste = !barreNascoste;
-  if (k === 'KeyQ') { stab = !stab; flip = null; } if (k === 'KeyN') snd.toggle(); if (k === 'Enter') { if (intro) intro = false; else nuova(); } if (k === 'KeyH') intro = !intro;
+  if (k === 'Equal' || k === 'BracketRight' || k === 'NumpadAdd') if (tempoIdx > 0) TEMPI[tempoIdx].v = Math.min(86400, Math.round(TEMPI[tempoIdx].v * 1.25 / 10) * 10); if (k === 'Minus' || k === 'BracketLeft' || k === 'NumpadSubtract') if (tempoIdx > 0) TEMPI[tempoIdx].v = Math.max(60, Math.round(TEMPI[tempoIdx].v / 1.25 / 10) * 10); if (k === 'KeyB') barreNascoste = !barreNascoste;
+  if (k === 'KeyP') { stab = !stab; flip = null; } if (k === 'Tab') { e.preventDefault(); datiAperti = !datiAperti; } if (k === 'KeyN') snd.toggle(); if (k === 'Enter') { if (intro) intro = false; else nuova(); } if (k === 'KeyH') intro = !intro; if (k === 'KeyT') avviaTutorial();
   if (k === 'Space') { e.preventDefault(); if (S.esito) nuova(); else if (!agg) { stab = false; flip = S.psi + Math.PI; } } });
 addEventListener('keyup', e => { tasti[e.code] = false; });
 let rTempo = [], rOrb = [];                                                  // rettangoli cliccabili del pannello (riempiti a ogni disegno)
-cv.addEventListener('mousedown', e => { snd.init(); if (intro) { intro = false; return; } const dentro = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  rTempo.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY)) tempoIdx = i; }); rOrb.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY)) selOrb = i; }); });
+cv.addEventListener('mousedown', e => { snd.init(); if (inizio) { avviaTutorial(); return; } if (intro) { intro = false; return; } const dentro = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  if (tutAttivo()) { const sc = rScelte.findIndex(r => dentro(r, e.offsetX, e.offsetY)); if (sc >= 0) { tut.sel = sc; tutInvio(); return; } if (rRadio && dentro(rRadio, e.offsetX, e.offsetY)) { tutInvio(); return; } }
+  rTempo.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY) && (!tutAttivo() || tutPermesso('Digit' + i))) { tempoIdx = i; if (tutAttivo()) tutTasto('Digit' + i); } }); if (!tutAttivo()) rOrb.forEach((r, i) => { if (dentro(r, e.offsetX, e.offsetY)) selOrb = i; }); });
+cv.addEventListener('mousemove', e => { if (tutAttivo() && tut.scelte) rScelte.forEach((r, i) => { if (e.offsetX >= r.x && e.offsetX <= r.x + r.w && e.offsetY >= r.y && e.offsetY <= r.y + r.h) tut.sel = i; }); });
 // ---- direzione "avanti" rispetto al corpo dominante (Terra, o Luna dentro la zona di cattura)
 function dominante() { const m = sim.luna(), dm = Math.hypot(S.x - m.x, S.y - m.y); return dm < T.SOI_M ? { vx: S.vx - m.vx, vy: S.vy - m.vy, rx: S.x - m.x, ry: S.y - m.y } : { vx: S.vx, vy: S.vy, rx: S.x, ry: S.y }; }
 // ---- ciclo
@@ -622,27 +1790,33 @@ let ultimo = performance.now();
 function ciclo(now) { requestAnimationFrame(ciclo); passo(Math.min(0.05, (now - ultimo) / 1000)); ultimo = now; disegna(); suoniAggiorna(); }
 // suoni (stessi del docking): motore e getti seguono i propulsori; sottofondo piu' cupo con poco propellente; allarme del propellente; esito
 function suoniAggiorna() {
-  if (!snd.attivo) return; const run = !pausa && !intro && !S.esito, pc = S.dv / sim.P.dvMax, tens = Math.max(0, Math.min(1, (0.4 - pc) / 0.4)), adesso = performance.now();
+  if (!snd.attivo) return; const run = !intro && !S.esito, pc = S.dv / sim.P.dvMax, tens = Math.max(0, Math.min(1, (0.4 - pc) / 0.4)), adesso = performance.now();
   snd.motore(run && spingendo ? 1 : 0); snd.getti(run && !agg && Math.abs(tqUlt) > 0.02 ? Math.min(1, Math.abs(tqUlt) / ALFA) : 0); snd.sottofondo(!S.esito, tens);
   if (run && pc <= 0.2 && adesso - tAllarme > (pc <= 0.1 ? 500 : 1000)) { tAllarme = adesso; snd.allarme('carburante'); }
-  if (S.esito && !esitoSuonato) { esitoSuonato = true; snd.ferma(); if (S.esito === 'persa') snd.urto(0.55); else snd.distruzione(); } }
+  if (S.esito && !esitoSuonato) { esitoSuonato = true; snd.ferma(); if (S.esito === 'persa' || S.esito === 'deriva') snd.urto(0.55); else snd.distruzione(); } }
 function passo(dtR) {
+  tutPasso();
   if (intro) { spingendo = false; tqUlt = 0; return; }
   if (S.esito && !risultato) chiudiTentativo(S.esito);
-  if (!pausa && !S.esito && !agg) { tReale += dtR; if (tempoIdx === 1) tel.t2 += dtR; if (spingendo) { tel.thrust += dtR; if (tel.first === null) tel.first = tReale; } if (tasti.KeyA || tasti.KeyD || tasti.ArrowLeft || tasti.ArrowRight) tel.rot += dtR; } else if (pausa && !S.esito && !agg) tel.pausa += dtR;
-  if (agg) { if (!pausa) stepAgg(dtR * TEMPI[tempoIdx].v); spingendo = false; tqUlt = 0; return; }
+  if (!S.esito && !agg && S.dv <= 0.0005) { const el = sim.elLuna(); tSenza = legataLuna(el) && el.rp - T.R_M > 20 && !ORB.find(o => corrisponde(o, el)) ? tSenza + dtR : 0; if (tSenza >= 3) { S.esito = 'deriva'; tSenza = 0; } } else tSenza = 0;   // senza propellente in un'orbita stabile ma non di attracco: missione fallita
+  if (!S.esito && !agg) { tReale += dtR; if (tempoIdx >= 2) tel.t2 += dtR; if (spingendo) { tel.thrust += dtR; if (tel.first === null) tel.first = tReale; } if (tasti.KeyA || tasti.KeyD || tasti.ArrowLeft || tasti.ArrowRight) tel.rot += dtR; }
+  if (agg) { stepAgg(dtR * TEMPI[tempoIdx].v); spingendo = false; tqUlt = 0; return; }
   const k = c => !!(tasti[c]), sx = k('KeyA') || k('ArrowLeft'), dx = k('KeyD') || k('ArrowRight');
-  let tq = 0; const verso = (tg, rate = 0) => { const er = ang(tg - S.psi); if (Math.abs(er) < 0.004 && Math.abs(wNave - rate) < 0.02) { S.psi = tg; wNave = rate; return null; } const wd = rate + Math.sign(er) * Math.min(WMAX, Math.sqrt(2 * ALFA * 0.8 * Math.abs(er)), Math.abs(er) / 0.4); return Math.max(-ALFA, Math.min(ALFA, (wd - wNave) / Math.max(dtR, 1e-3))); };
+  let tq = 0, spesaW = 0; const verso = (tg, rate = 0) => { const er = ang(tg - S.psi); if (Math.abs(er) < 0.004 && Math.abs(wNave - rate) < 0.02) { spesaW += Math.abs(wNave - rate); S.psi = tg; wNave = rate; return null; } const wd = rate + Math.sign(er) * Math.min(WMAX, Math.sqrt(2 * ALFA * 0.8 * Math.abs(er)), Math.abs(er) / 0.4); return Math.max(-ALFA, Math.min(ALFA, (wd - wNave) / Math.max(dtR, 1e-3))); };
   if (sx || dx) { flip = null; stab = false; rateUlt = 0; tq = ((sx ? 1 : 0) - (dx ? 1 : 0)) * ALFA; }
   else if (flip !== null) { rateUlt = 0; const q = verso(flip); if (q === null) flip = null; else tq = q; }
-  else if (stab) { const d0 = dominante(), tg = Math.atan2(d0.vy, d0.vx), warp = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito ? TEMPO_SPINTA : TEMPI[tempoIdx].v, rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * warp;   // velocita' con cui il moto ruota, in secondi REALI
+  else if (stab) { const d0 = dominante(), tg = Math.atan2(d0.vy, d0.vx), warp = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito ? Math.min(TEMPO_SPINTA, TEMPI[tempoIdx].v) : TEMPI[tempoIdx].v, rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * warp;   // velocita' con cui il moto ruota, in secondi REALI
+    const cambioTempo = warp !== warpUlt; warpUlt = warp;                                      // al cambio di scala del tempo la rotazione richiesta cambia di colpo: la nave si riallinea senza getti
     if (Math.abs(rr) > 0.8 * WMAX) { S.psi = tg; wNave = 0; rateUlt = 0; }                       // tempo molto accelerato: lo stabilizzatore tiene la nave allineata al moto
+    else if (cambioTempo) { S.psi = tg; wNave = rr; rateUlt = rr; }
     else { rateUlt = rr; const q = verso(tg, rr); if (q !== null) tq = q; } }
-  tqUlt = tq; if (!pausa) { wNave = Math.max(-WMAX, Math.min(WMAX, wNave + tq * dtR)); S.psi += wNave * dtR; }
+  if (S.dv <= 0) tq = 0;                                                                         // senza propellente i laterali non rispondono
+  spesaW += Math.abs(tq) * dtR; if (spesaW > 0) S.dv = Math.max(0, S.dv - ROT_K * spesaW);
+  tqUlt = tq; wNave = Math.max(-WMAX, Math.min(WMAX, wNave + tq * dtR)); ledMagnete(dtR, sx || dx || flip !== null || stab, (sx ? 1 : 0) - (dx ? 1 : 0)); S.psi += wNave * dtR;
   spingendo = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito;
   const v = () => TEMPI[tempoIdx].v;
-  if (!pausa && !S.esito) { const w = spingendo ? TEMPO_SPINTA : v(); const t0 = S.t; sim.avanza(dtR * w, spingendo); aggiornaOrbita(S.t - t0); if (!traccia.length || S.t - traccia[traccia.length - 1].t > 500) { traccia.push({ x: S.x, y: S.y, t: S.t }); if (traccia.length > 500) traccia.shift(); } }
-  const adesso = performance.now(); if (!pausa && adesso - tPrev > (spingendo ? 30 : 120)) { aggiornaPrevisione(); tPrev = adesso; }
+  if (!S.esito) { const w = spingendo ? Math.min(TEMPO_SPINTA, v()) : v(); const t0 = S.t; sim.avanza(dtR * w, spingendo); aggiornaOrbita(S.t - t0); if (!traccia.length || S.t - traccia[traccia.length - 1].t > 500) { traccia.push({ x: S.x, y: S.y, t: S.t }); if (traccia.length > 500) traccia.shift(); } }
+  const adesso = performance.now(); if (adesso - tPrev > (spingendo ? 30 : 120)) { aggiornaPrevisione(); tPrev = adesso; }
 }
 // estremi (piu' vicino / piu' lontano dalla Luna) lungo la previsione legata, con direzione e istante
 function estremi() { let mn = null, mx = null; prev.pts.forEach(p => { const m = sim.luna(p.t), d = Math.hypot(p.x - m.x, p.y - m.y); if (!mn || d < mn.d) mn = { d, t: p.t, x: p.x, y: p.y }; if (!mx || d > mx.d) mx = { d, t: p.t, x: p.x, y: p.y }; }); ext = { mn, mx }; }
@@ -686,8 +1860,11 @@ function aggiornaVista() { const b = bersagliVista(), a = 0.1; VC.cx += (b.cx - 
 const scala = () => Math.min(AW, H) * 0.46 / Math.exp(VC.lr);
 const toS = (x, y, th) => { const r = ruotaA(x, y, th), k = scala(); return [AW / 2 + (r[0] - VC.cx) * k, H / 2 - (r[1] - VC.cy) * k]; };
 // ---- disegno
+const vEff = () => spingendo ? Math.min(TEMPO_SPINTA, TEMPI[tempoIdx].v) : TEMPI[tempoIdx].v;   // secondi di gioco per ogni secondo reale, adesso
+const fmtFra = s => { const q = s / vEff(); return q < 60 ? Math.ceil(q) + ' s' : q < 3600 ? fmtR(q) : fmtT(q); };   // un intervallo di gioco, detto in tempo reale alla velocita' attuale (a 2 o 3 i numeri scendono)
 const fmtR = s => Math.floor(s / 60) + ' min ' + String(Math.floor(s % 60)).padStart(2, '0') + ' s';
 const fmtT = s => { const g = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (g ? g + ' g ' : '') + (g || h ? h + ' h ' : '') + String(m).padStart(2, '0') + ' min'; };
+const lettura = (v, lungo) => { const u = v < 120 ? [v, 's', 'secondo'] : v < 7200 ? [v / 60, 'min', 'minuti'] : v < 172800 ? [v / 3600, 'h', 'ore'] : [v / 86400, 'g', 'giorni'], n = Math.round(u[0] * 10) / 10, t = n.toLocaleString('it-IT'); return v === 1 ? (lungo ? 'tempo reale (1:1)' : '1:1') : lungo ? '1 s = ' + t + ' ' + (n === 1 ? { min: 'minuto', h: 'ora', g: 'giorno', s: 'secondo' }[u[1]] : u[2]) : t + ' ' + u[1]; };
 const fmt = (v, d = 0) => v.toLocaleString('it-IT', { maximumFractionDigits: d, minimumFractionDigits: d });
 function cerchio(x, y, r, fill, stroke, dash, lw) { ctx.beginPath(); ctx.arc(x, y, Math.max(r, 0.5), 0, 6.2832); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); ctx.setLineDash([]); } }
 function testo(t, x, y, col, sz, al) { ctx.font = (sz || 13) + 'px ui-monospace,Menlo,Consolas,monospace'; ctx.fillStyle = col || COL.txt; ctx.textAlign = al || 'left'; ctx.fillText(t, x, y); }
@@ -701,6 +1878,7 @@ function disegna() {
   cerchio(mr[0], mr[1], T.SOI_M * k, null, 'rgba(180,180,174,0.3)', [3, 5]); const sole = [Math.cos(th), Math.sin(th)];                      // il Sole sta fermo nello spazio: nel sistema che ruota con la Luna la luce gira
   Aspetto.corpo(ctx, 'terra', te[0], te[1], Math.max(T.R_E * k, 2), sole, -18 + S.t / 86400 * 360); Aspetto.corpo(ctx, 'luna', mr[0], mr[1], Math.max(T.R_M * k, 1.5), sole, 0);
   testo('Terra', te[0], te[1] + Math.max(T.R_E * k, 5) + 14, COL.dim, 11, 'center'); testo('Luna', mr[0], mr[1] + Math.max(T.R_M * k, 4) + 14, COL.dim, 11, 'center');
+  { ctx.save(); ctx.globalAlpha = 0.85 * sezA('dist'); testo('nave a ' + fmt(Math.hypot(S.x, S.y) - T.R_E) + ' km', te[0], te[1] + Math.max(T.R_E * k, 5) + 28, COL_FLAVOR, 10, 'center'); testo('nave a ' + fmt(Math.hypot(S.x - m.x, S.y - m.y) - T.R_M) + ' km', mr[0], mr[1] + Math.max(T.R_M * k, 4) + 28, COL_FLAVOR, 10, 'center'); ctx.restore(); }   // distanze: informazioni di contorno, vicino ai corpi
   if (T.SOI_M * k > 40) testo('sfera d\'influenza della Luna', mr[0], mr[1] - T.SOI_M * k - 6, COL.dim, 10, 'center');
   anelli(th);
   if (traccia.length > 1) { ctx.beginPath(); traccia.forEach((p, i) => { const q = toS(p.x, p.y, sim.luna(p.t).a); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.strokeStyle = 'rgba(207,227,255,0.22)'; ctx.lineWidth = 1; ctx.stroke(); }
@@ -713,10 +1891,12 @@ function disegna() {
     if (prev.legata && ext) { [[ext.mn, 'min'], [ext.mx, 'max']].forEach(([e, n]) => { const p = toS(e.x, e.y, sim.luna(e.t).a); cerchio(p[0], p[1], 4, null, COL.txt, null, 1.5); testo(n + ' ' + fmt(e.d - T.R_M) + ' km', p[0] + 8, p[1] - 6, COL.txt, 11); }); }
     if (prev.fine === 'periluna' && prev.xMin !== null) { const alt = prev.dMin - T.R_M, c = Math.abs(alt - bersaglio().rp) <= TOLRP ? COL.good : COL.warn, pm = toS(prev.xMin, prev.yMin, sim.luna(prev.tMin).a); cerchio(pm[0], pm[1], 5, c); testo('qui passi a ' + fmt(alt) + ' km dalla Luna', pm[0] + 10, pm[1] + 16, c, 12); } }
   const ns = toS(S.x, S.y, th), a = -(S.psi - th), pxN = Math.max(1.5, Math.min(6, 3 * Math.pow(k / (Math.min(AW, H) * 0.46 / 45000), 0.2))), jet = Math.min(1, Math.abs(tqUlt) / ALFA);
-  ctx.save(); ctx.translate(ns[0], ns[1]); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(pxN * 4.8, 0); ctx.lineTo(pxN * 9, 0); ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(214,226,238,0.45)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); ctx.restore();   // linea della prua
-  Aspetto.disegnaNave(ctx, Aspetto.GABBIANO, ns[0], ns[1], a, pxN, { main: spingendo ? 1 : 0, rotL: tqUlt > 0.02 ? jet : 0, rotR: tqUlt < -0.02 ? jet : 0, flash: !!S.esito && S.esito !== 'catturata' });
-  if (mr[0] > AW - 20 || mr[0] < 20 || mr[1] < 20 || mr[1] > H - 20) { const aa = Math.atan2(mr[1] - H / 2, mr[0] - AW / 2), x = AW / 2 + Math.cos(aa) * Math.min(AW, H) * 0.44, y = H / 2 + Math.sin(aa) * Math.min(AW, H) * 0.44; ctx.save(); ctx.translate(x, y); ctx.rotate(aa); ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, 6); ctx.lineTo(-6, -6); ctx.closePath(); ctx.fillStyle = COL.luna; ctx.fill(); ctx.restore(); testo('Luna', x - Math.cos(aa) * 24, y - Math.sin(aa) * 24 + 4, COL.luna, 11, 'center'); }
-  pannelloDestro(); esito(); if (intro) pannelloAvvio();
+  if (!boom) { ctx.save(); ctx.translate(ns[0], ns[1]); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(pxN * 4.8, 0); ctx.lineTo(pxN * 9, 0); ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(214,226,238,0.45)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }   // linea della prua
+  if (S.esito && S.esito.startsWith('schianto') && !boom) boom = Aspetto.creaEsplosione(Aspetto.GABBIANO, ns[0], ns[1], a, pxN, performance.now());   // distrutta: al posto della nave c'e' l'esplosione
+  if (boom) Aspetto.disegnaEsplosione(ctx, boom, performance.now()); else Aspetto.disegnaNave(ctx, Aspetto.GABBIANO, ns[0], ns[1], a, pxN, { main: spingendo ? 1 : 0, rotL: tqUlt > 0.02 ? jet : 0, rotR: tqUlt < -0.02 ? jet : 0, flash: !!S.esito && S.esito !== 'catturata' && S.esito !== 'deriva' });
+  if (mr[0] > AW - 20 || mr[0] < 20 || mr[1] < 20 || mr[1] > H - 20) { const aa = Math.atan2(mr[1] - H / 2, mr[0] - AW / 2), x = AW / 2 + Math.cos(aa) * Math.min(AW, H) * 0.44, y = H / 2 + Math.sin(aa) * Math.min(AW, H) * 0.44; ctx.save(); ctx.translate(x, y); ctx.rotate(aa); ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, 6); ctx.lineTo(-6, -6); ctx.closePath(); ctx.fillStyle = COL.luna; ctx.fill(); ctx.restore(); testo('Luna', x - Math.cos(aa) * 24, y - Math.sin(aa) * 24 + 4, COL.luna, 11, 'center'); ctx.save(); ctx.globalAlpha = 0.85 * sezA('dist'); testo(fmt(Math.hypot(S.x - m.x, S.y - m.y) - T.R_M) + ' km', x - Math.cos(aa) * 24, y - Math.sin(aa) * 24 + 18, COL_FLAVOR, 10, 'center'); ctx.restore(); }   // il segnalino della Luna porta anche la distanza
+  arcoSpinta(ns);
+  barraRotazioneMappa(); hud(); pannelloDati(); esito(); if (intro) pannelloAvvio(); tutDisegna(); if (inizio) schermataInizio();
 }
 // tacche di tempo lungo la traiettoria prevista (come i secondi nel docking): intervallo scelto in base alla lunghezza della linea
 const fmtDur = s => s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? (s % 3600 < 60 ? (s / 3600) + ' h' : Math.floor(s / 3600) + ' h ' + Math.round(s % 3600 / 60) + ' min') : Math.floor(s / 86400) + ' g' + (s % 86400 >= 3600 ? ' ' + Math.round(s % 86400 / 3600) + ' h' : '');
@@ -744,70 +1924,135 @@ function frenataNecessaria(o) { const el = sim.elLuna(), rr = T.R_M + o.ra; if (
 function elementi() {
   const el = sim.elLuna(), de = Math.hypot(S.x, S.y), it = [];
   if (S.dvUsato < 1.95 && de < 30000) { const eps = (S.vx * S.vx + S.vy * S.vy) / 2 - T.MU_E / de, eq = Math.sqrt(Math.max(0, 2 * (eps + T.MU_E / sim.P.r0))) - sim.v0, max = 2.2, lo = 1.74, hi = 1.80;
-    return [{ tit: 'SPINTA ACCUMULATA', f: eq / max, mark: DV_TLI / max, zona: [lo / max, hi / max], ok: eq >= lo && eq <= hi, lab: fmt(Math.max(0, eq), 2) + ' km/s  ·  giusto tra ' + fmt(lo, 2) + ' e ' + fmt(hi, 2) + (eq > hi ? '  — troppa: gira (Spazio) e frena (W)' : eq >= lo ? '  — giusto: rilascia W' : '') }]; }
+    return [{ tit: 'SPINTA ACCUMULATA', f: eq / max, mark: DV_TLI / max, zona: [lo / max, hi / max], ok: eq >= lo && eq <= hi, lab: fmt(Math.max(0, eq), 2) + ' km/s  ·  giusto tra ' + fmt(lo, 2) + ' e ' + fmt(hi, 2) + (eq > hi ? '  — troppa: gira (Spazio) e frena (↑)' : eq >= lo ? '  — giusto: rilascia W' : '') }]; }
   if (S.dvUsato < 0.5 || el.d > 110000) return [];
   const o = agg ? agg.o : bersaglio(), sc = (tit, val, t, tol, max) => ({ tit, f: val / max, mark: t / max, zona: [(t - tol) / max, (t + tol) / max], ok: Math.abs(val - t) <= tol, lab: fmt(val) + ' km  ·  obiettivo ' + fmt(t) + ' ± ' + fmt(tol) + ' km' + (val > t + tol ? '  — troppo alto' : val < t - tol ? '  — troppo basso' : '  — giusto') });
   const tit1 = 'QUOTA MINIMA SULLA LUNA', tit2 = 'QUOTA MASSIMA SULLA LUNA', ra0 = tolRa(o);
   if (el.eps < 0 && el.rp !== null) { it.push(sc(tit1, el.rp - T.R_M, o.rp, TOLRP, 3000)); const e2 = sc(tit2, Math.min(el.ra - T.R_M, 8000), o.ra, ra0, 8000); if (el.ra - T.R_M > 8000) e2.lab = 'oltre ' + fmt(8000) + ' km  ·  obiettivo ' + fmt(o.ra) + ' ± ' + fmt(ra0) + ' km  — troppo alto: frena ancora'; it.push(e2); }
   else { if (prev && prev.fine === 'periluna') it.push(sc(tit1, prev.dMin - T.R_M, o.rp, TOLRP, 3000)); else if (prev && prev.fine === 'schianto_luna') it.push({ tit: tit1, f: 0, ok: false, lab: 'la traiettoria finisce sulla Luna: sposta il passaggio (ruota con A/D e spingi con W)' });
-    const ec = frenataNecessaria(o); it.push({ tit: 'FRENATA DA FARE', val: fmt(Math.max(0, ec) * 1000, 0) + ' m/s', cap: 'non sei ancora legato alla Luna: frenata da fare' + (prev && prev.fine === 'periluna' ? ' · punto più vicino fra ' + fmtT(Math.max(0, prev.tMin - S.t)) : ''), f: 1, zona: [(o.ra - ra0) / 8000, (o.ra + ra0) / 8000], mark: o.ra / 8000, ok: false, lab: 'non sei ancora legato alla Luna · frenata ancora da fare: ' + fmt(Math.max(0, ec) * 1000, 0) + ' m/s' + (prev && prev.fine === 'periluna' ? '  ·  punto più vicino fra ' + fmtT(Math.max(0, prev.tMin - S.t)) : '') }); }
+    const ec = frenataNecessaria(o); it.push({ tit: 'FRENATA DA FARE', val: fmt(Math.max(0, ec) * 1000, 0) + ' m/s', cap: 'non sei ancora legato alla Luna: frenata da fare' + (prev && prev.fine === 'periluna' ? ' · punto più vicino fra ' + fmtFra(Math.max(0, prev.tMin - S.t)) : ''), f: 1, zona: [(o.ra - ra0) / 8000, (o.ra + ra0) / 8000], mark: o.ra / 8000, ok: false, lab: 'non sei ancora legato alla Luna · frenata ancora da fare: ' + fmt(Math.max(0, ec) * 1000, 0) + ' m/s' + (prev && prev.fine === 'periluna' ? '  ·  punto più vicino fra ' + fmtFra(Math.max(0, prev.tMin - S.t)) : '') }); }
   if (S.tCattura > 0 || agg) it.push({ tit: agg ? 'AGGANCIO ALL\'ORBITA' : 'ORBITA GIUSTA', f: agg ? Math.min(1, (performance.now() - agg.t0) / AGG_MS) : S.tCattura / T.TENUTA, ok: true, lab: agg ? (agg.fatto ? 'agganciato' : 'la nave entra nell\'orbita pianificata') : fmt(S.tCattura, 0) + ' / ' + T.TENUTA + ' s (accelera il tempo)' }); return it;
 }
 // ---- pannello di destra (stesso schema del docking: titolo, righe etichetta/valore, barrette, comandi in fondo)
-function pannelloDestro() {
-  const A = Aspetto, el = sim.elLuna(), de = Math.hypot(S.x, S.y), p = A.pannello(ctx, W, H, PANEL, 'TERRA-LUNA'), pc = S.dv / sim.P.dvMax; let y = 56;
-  A.riga(ctx, p, y, 'tempo di gioco', fmtR(tReale)); y += 20; A.riga(ctx, p, y, 'tempo di missione', fmtT(S.t)); y += 20; A.riga(ctx, p, y, 'dalla Terra', fmt(de - T.R_E) + ' km'); y += 20; A.riga(ctx, p, y, 'dalla Luna', fmt(el.d - T.R_M) + ' km'); y += 20;
-  A.riga(ctx, p, y, 'vel. rispetto alla Luna', fmt(el.vrel, 2) + ' km/s'); y += 30;
-  const cp = pc > 0.4 ? COL.good : pc > 0.15 ? COL.warn : COL.bad;                                          // propellente
+// barra della rotazione sulla mappa: solo grafica, nessun testo. La posizione della "lancetta" si legge dall'intensita' e dal tono: luminosa e piu' opaca dove sta la rotazione,
+// verde se la nave e' stabile (al centro), poi giallo e rosso verso gli estremi; ai bordi sfarfalla come i getti dei propulsori quando una coppia e' in azione.
+// Il led ha una posizione neutra al centro con uno scatto da leva ben fatta ("tlack"): se ci arrivi piano cade nello zero e per farlo uscire serve un minimo di forza (isteresi);
+// se attraversi in fretta non si blocca e scorre morbido.
+let stabUlt = true;
+function ledMagnete(dt, spinto, cmd) { if (stab !== stabUlt) { stabUlt = stab; MAG_ROT.bloccato = false; MAG_ROT.ultCmd = 0; }   /* acceso o spento lo stabilizzatore cambia il significato dello zero: il magnete si sgancia */ const wS = stab ? wNave - rateUlt : wNave; if (MAG_ROT.passo(wS, dt, spinto, cmd)) wNave = stab ? rateUlt : 0; ledBloccato = MAG_ROT.bloccato; if (MAG_ROT.cattura) tlackT = performance.now(); }   // nello zero la rotazione vera viene azzerata (rispetto al moto, se lo stabilizzatore e' acceso), tranne mentre la si comanda o se c'e' lo stabilizzatore (che la governa da solo e deve poter correggere l'allineamento)
+let barraAttiva = -1e9, ledF = 0, ledT = performance.now();
+function barraRotazioneMappa() {
+  if (agg || intro || (tutAttivo() && (tut.spento || (!tut.sbloc.has('rot') && !tut.sbloc.has('stab') && !tut.evid.has('rot'))))) return;
+  const ora = performance.now(), dt = Math.min(0.1, Math.max(0.001, (ora - ledT) / 1000)); ledT = ora;
+  const wS = stab ? wNave - rateUlt : wNave;                                                                // lo zero e il suo magnete sono in passo() (ledMagnete)
+  const vero = Math.max(-1, Math.min(1, wS / WMAX)), mira = ledBloccato ? 0 : vero;
+  ledF += (mira - ledF) * (1 - Math.exp(-dt / (ledBloccato ? 0.045 : 0.03)));                                // scatto rapido verso la mira, quasi istantaneo
+  const tAttesa = stab ? 900 : 5000;                                                                              // quanto resta acceso dopo l'ultima attivita': 0,9 s con stabilizzatore, 5 s senza
+  if (!ledBloccato || ora - barraTocco < 100 || tutAttivo()) barraAttiva = ora;                                       // visibile se lo stabilizzatore e' spento, mentre il led si muove, o al tocco dei tasti di rotazione / stabilizzatore
+  barraA += ((ora - barraAttiva < tAttesa ? 1 : 0) - barraA) * (1 - Math.exp(-dt / (ora - barraAttiva < tAttesa ? 0.06 : 0.45)));   // compare in fretta, sfuma piano
+  if (barraA < 0.01) return;
+  const bw = Math.min(AW * 0.62, 680), x0 = AW / 2 - bw / 2, y = Math.round(H * 0.2), c = 0.5 - ledF * 0.5;                                                                // frecce a sinistra: il led va a sinistra
+  ctx.save(); ctx.globalAlpha = barraA;
+  const k = Math.min(1, Math.abs(wS) / (WMAX * 0.7)), A = [107, 255, 154], B = [255, 215, 94], C = [255, 107, 107], pick = (p, q, t) => p.map((v, i) => Math.round(v + (q[i] - v) * t));
+  const col = k < 0.5 ? pick(A, B, k / 0.5) : pick(B, C, (k - 0.5) / 0.5), rgba = (a, al) => 'rgba(' + a[0] + ',' + a[1] + ',' + a[2] + ',' + al + ')';
+  // linea sottile: luminosita' 0 ai lati, 100 dove sta il led (al centro se stabile), con andamento esponenziale
+  const g = ctx.createLinearGradient(x0, 0, x0 + bw, 0);
+  for (let i = 0; i <= 48; i++) { const u = i / 48, fin = Math.pow(Math.sin(Math.PI * u), 0.6), a = Math.exp(-6 * Math.abs(u - c)) * fin; g.addColorStop(u, rgba(col, Math.max(0.05 * fin, a))); }
+  ctx.save(); ctx.fillStyle = g; ctx.shadowColor = rgba(col, 0.9); ctx.shadowBlur = 12; ctx.fillRect(x0, y - 1, bw, 2);       // nucleo + alone morbido
+  ctx.shadowBlur = 26; ctx.globalAlpha = 0.5 * barraA; ctx.fillRect(x0, y - 1, bw, 2); ctx.restore();                            // secondo alone piu' ampio
+  const vg = ctx.createLinearGradient(0, y - 14, 0, y + 14); vg.addColorStop(0, 'rgba(107,255,154,0)'); vg.addColorStop(0.5, 'rgba(107,255,154,' + (ledBloccato ? 1 : 0.68) + ')'); vg.addColorStop(1, 'rgba(107,255,154,0)');
+  ctx.save(); ctx.fillStyle = vg; ctx.shadowColor = 'rgba(107,255,154,0.8)'; ctx.shadowBlur = 10; ctx.fillRect(AW / 2 - 0.75, y - 14, 1.5, 28); ctx.restore();   // la posizione neutra: tacca verticale sottile che esce dalla linea
+  const tk = Math.max(0, 1 - (ora - tlackT) / 650);                                                                      // "tlack": lampo verde e led che si gonfia un istante
+  if (tk > 0) { const zg = ctx.createLinearGradient(AW / 2 - bw * 0.12, 0, AW / 2 + bw * 0.12, 0), zA = tk * tk; zg.addColorStop(0, 'rgba(107,255,154,0)'); zg.addColorStop(0.5, 'rgba(160,255,190,' + zA + ')'); zg.addColorStop(1, 'rgba(107,255,154,0)');
+    ctx.save(); ctx.fillStyle = zg; ctx.shadowColor = 'rgba(107,255,154,' + zA + ')'; ctx.shadowBlur = 20; ctx.fillRect(AW / 2 - bw * 0.12, y - 1.5, bw * 0.24, 3); ctx.restore(); }
+  const lx = x0 + c * bw; ctx.save(); ctx.fillStyle = ledBloccato ? '#e8fff0' : '#ffffff'; ctx.shadowColor = ledBloccato ? 'rgba(150,255,190,0.95)' : 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 12 + 24 * tk;
+  ctx.beginPath(); ctx.arc(lx, y, 2.6 + 3.4 * tk, 0, 6.2832); ctx.fill(); ctx.restore();
+  if (tk > 0) { ctx.save(); ctx.strokeStyle = 'rgba(170,255,200,' + 0.85 * tk * tk + ')'; ctx.lineWidth = 1.5; ctx.shadowColor = 'rgba(107,255,154,' + tk + ')'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(AW / 2, y, 5 + 30 * (1 - tk), 0, 6.2832); ctx.stroke(); ctx.restore(); }   // anello che si espande dal centro quando il led cade nello zero
+  ctx.restore();                                // led bianco (verdino quando e' nella posizione neutra)
+}
+// tutorial: quanto e' visibile ogni parte dell'interfaccia (i comandi si accendono uno alla volta; EVIDENZIA tiene acceso un pezzo anche da spento)
+const COL_FLAVOR = '#a3b4c5';   // grigio chiaro delle informazioni di contorno
+let dvUlt = 1e9, dvFlash = -1e9;
+const sezA = n => !tutAttivo() ? 1 : tut.evid.has(n) || (['tempi', 'prop', 'dist'].includes(n) && tut.evid.has('base')) ? 1 : tut.spento ? 0.15 : tutHa(n) ? 1 : 0.3;
+// interfaccia sulla scena (come una realta' aumentata): essenziale = propellente, stabilizzatore, tempo (e barra e led, traiettoria); contorno = tempi negli angoli, distanze vicino ai corpi
+function hud() {
+  const A = Aspetto, ora = performance.now(); if (S.dv < dvUlt - 1e-7) dvFlash = ora; dvUlt = S.dv; const pc = Math.max(0, Math.min(1, S.dv / sim.P.dvMax)), col = pc > 0.4 ? COL.good : pc > 0.15 ? COL.warn : COL.bad;
+  ctx.save(); ctx.globalAlpha = 0.85 * sezA('tempi'); testo('tempo di gioco   ' + fmtR(tReale), 18, 26, COL_FLAVOR, 11); testo('tempo di missione   ' + fmtT(S.t), 18, 44, COL_FLAVOR, 11); ctx.restore();
+  { const x = 20, y0 = Math.round(H * 0.22), h = Math.round(H * 0.38), fh = h * pc;                                     // propellente: barra verticale luminosa sul bordo sinistro
+    ctx.save(); ctx.globalAlpha = sezA('prop') * (pc < 0.15 ? 0.65 + 0.35 * Math.sin(ora / 150) : 1); ctx.fillStyle = '#16202b'; ctx.fillRect(x, y0, 4, h);
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 9; ctx.fillRect(x, y0 + h - fh, 4, fh); ctx.shadowBlur = 0; testo('PROP', x - 3, y0 - 8, COL_FLAVOR, 9);
+    const fk = Math.max(0, 1 - (ora - dvFlash) / 500); if (fk > 0) { ctx.fillStyle = 'rgba(255,255,255,' + 0.9 * fk + ')'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 12; ctx.fillRect(x - 1, y0 + h - fh - 2, 6, 3); }   // la punta della barra lampeggia mentre si consuma propellente
+    ctx.restore(); }
+  const g = 6, bwB = 40, n = TEMPI.length, tot = n * bwB + (n - 1) * g, x1 = AW - 20 - tot, y1 = 18;                          // in alto a destra: stabilizzatore e tasti del tempo
+  ctx.save(); ctx.globalAlpha = sezA('stab'); { const cx = x1 - 26, cy = y1 + 16, lit = stab;
+    ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 6.2832); ctx.strokeStyle = lit ? COL.good : COL.dim; ctx.lineWidth = 1.5; if (lit) { ctx.shadowColor = COL.good; ctx.shadowBlur = 10; } ctx.stroke(); ctx.shadowBlur = 0;
+    if (lit) { ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 6.2832); ctx.fillStyle = COL.good; ctx.fill(); } testo('P stab', cx, cy + 27, lit ? COL.good : COL.dim, 9, 'center'); } ctx.restore();
+  ctx.save(); ctx.globalAlpha = sezA('tempo'); rTempo = TEMPI.map((t, i) => { const r = { x: x1 + i * (bwB + g), y: y1, w: bwB, h: 32 }, att = i === tempoIdx && !spingendo, spentoB = tutAttivo() && i !== tempoIdx && !tutPermesso('Digit' + i);
+    ctx.save(); if (spentoB) ctx.globalAlpha *= 0.3;
+    ctx.fillStyle = att ? 'rgba(127,231,255,0.16)' : 'rgba(22,32,43,0.8)'; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = att ? COL.ship : '#1b2a3a'; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
+    testo(String(t.k), r.x + r.w / 2, r.y + 14, att ? COL.txt : COL.dim, 12, 'center'); testo(lettura(t.v), r.x + r.w / 2, r.y + 26, att ? COL.ship : COL.dim, 9, 'center'); ctx.restore(); return r; });
+  testo(spingendo ? 'spinta: 1 s = 1 minuto' : lettura(TEMPI[tempoIdx].v, true), x1 + tot, y1 + 46, COL.dim, 10, 'right'); ctx.restore();
+  if (S.dvUsato > 0.5 && sim.elLuna().d < 110000 && !tutAttivo()) { const o = agg ? agg.o : bersaglio(); testo('orbita di attracco: ' + o.n + '   (O cambia, Tab dati)', AW - 20, H - 18, COL.dim, 10, 'right'); }
+  else if (!tutAttivo() && !S.esito) testo('Tab  dati e comandi', AW - 20, H - 18, COL.dim, 10, 'right');
+  ctx.globalAlpha = 1;
+}
+// la spinta accumulata come arco attorno alla nave: compare mentre spingi (e si spegne piano dopo), con la zona giusta in verde
+function arcoSpinta(ns) {
+  const ora = performance.now(); if (spingendo) spintaT = ora; const fade = spingendo ? 1 : Math.max(0, 1 - (ora - spintaT) / 1500);
+  if (fade <= 0 || barreNascoste || S.esito || boom || (tutAttivo() && !tut.evid.has('spinta'))) return; const e = elementi()[0]; if (!e || e.tit !== 'SPINTA ACCUMULATA') return;
+  const R = 54, a0 = Math.PI * 0.75, span = Math.PI * 1.5, an = f => a0 + span * Math.max(0, Math.min(1, f)), x = ns[0], y = ns[1];
+  ctx.save(); ctx.globalAlpha = fade; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.arc(x, y, R, a0, a0 + span); ctx.strokeStyle = 'rgba(40,56,72,0.8)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, R, an(e.zona[0]), an(e.zona[1])); ctx.strokeStyle = 'rgba(107,255,154,0.5)'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, R, a0, an(e.f)); ctx.strokeStyle = e.ok ? COL.good : COL.ship; ctx.lineWidth = 3; ctx.shadowColor = e.ok ? COL.good : COL.ship; ctx.shadowBlur = 8; ctx.stroke(); ctx.shadowBlur = 0;
+  testo('SPINTA', x, y - R - 12, COL_FLAVOR, 9, 'center'); const am = an(e.mark); ctx.beginPath(); ctx.moveTo(x + Math.cos(am) * (R - 7), y + Math.sin(am) * (R - 7)); ctx.lineTo(x + Math.cos(am) * (R + 7), y + Math.sin(am) * (R + 7)); ctx.strokeStyle = COL.txt; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+}
+// pannello dati a scomparsa (Tab): i numeri, le barrette di obiettivo, l'obiettivo a parole, la scelta dell'orbita e i comandi
+function pannelloDati() {
+  rOrb = []; if (intro || (tutAttivo() ? !tut.evid.has('dati') : !datiAperti)) return;
+  const A = Aspetto, el = sim.elLuna(), pc = S.dv / sim.P.dvMax, p = (ctx.fillStyle = 'rgba(8,13,20,0.95)', ctx.fillRect(W - PANEL, 0, PANEL, H), A.pannello(ctx, W, H, PANEL, 'DATI')); let y = 56;
+  A.riga(ctx, p, y, 'vel. relativa Luna', fmt(el.vrel, 2) + ' km/s'); y += 30;
+  const cp = pc > 0.4 ? COL.good : pc > 0.15 ? COL.warn : COL.bad;
   A.testo(ctx, 'PROPELLENTE', p.x, y, COL.dim, 12); A.testoDx(ctx, fmt(S.dv, 2) + ' km/s', p.x + p.w, y, p.w - 100, cp, 14); A.barra(ctx, p.x, y + 6, p.w, pc, cp); y += 36;
-  if (!agg) { const wShow = stab ? wNave - rateUlt : wNave, fermo = Math.abs(wShow) < 0.03;                // rotazione: barra centrata, zona verde = nave stabile
-    A.testo(ctx, 'ROTAZIONE', p.x, y, COL.dim, 12); A.testoDx(ctx, fermo ? 'ferma' : (wShow > 0 ? 'antioraria ' : 'oraria ') + fmt(Math.abs(wShow), 2) + ' rad/s', p.x + p.w, y, p.w - 80, fermo ? COL.good : COL.warn, 14);
-    ctx.fillStyle = '#16202b'; ctx.fillRect(p.x, y + 6, p.w, 6); ctx.fillStyle = 'rgba(107,255,154,0.28)'; ctx.fillRect(p.x + p.w / 2 - 4, y + 6, 8, 6); ctx.fillStyle = fermo ? COL.good : COL.warn; ctx.fillRect(p.x + p.w / 2 + Math.max(-1, Math.min(1, wShow / WMAX)) * (p.w / 2 - 2) - 2, y + 3, 4, 12);
-    if (!fermo) A.testo(ctx, 'contrasta con ' + (wShow > 0 ? 'D' : 'A') + ' (o Q)', p.x, y + 28, COL.dim, 10); } else A.testo(ctx, 'COMANDI DISATTIVATI durante l\'aggancio', p.x, y, COL.dim, 11);
-  y += 50;
-  A.testo(ctx, 'stabilizzatore ' + (stab ? 'SI' : 'no') + '  |  tempo', p.x, y, COL.dim, 11); y += 8;                // velocita' del tempo: due tasti cliccabili
-  rTempo = TEMPI.map((t, i) => { const w = (p.w - 8) / 2, r = { x: p.x + i * (w + 8), y, w, h: 24 }, att = i === tempoIdx && !spingendo;
-    ctx.fillStyle = att ? 'rgba(127,231,255,0.16)' : '#16202b'; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = att ? COL.ship : '#1b2a3a'; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w, r.h);
-    A.testo(ctx, t.k + '  ' + fmt(t.v) + '×', r.x + r.w / 2, r.y + 16, att ? COL.txt : COL.dim, 12, 'center'); return r; });
-  y += 24 + 22;
-  if (pausa) A.testo(ctx, 'PAUSA (P)', p.x + p.w, 28, COL.warn, 12, 'right'); else if (spingendo) A.testo(ctx, 'SPINTA', p.x + p.w, 28, COL.warn, 12, 'right');
+  if (!agg) { const wShow = stab ? wNave - rateUlt : wNave; A.riga(ctx, p, y, stab ? 'rotaz. (moto)' : 'rotaz. (stelle)', Math.abs(wShow) < 0.03 ? 'ferma' : fmt(Math.abs(wShow), 2) + ' rad/s', Math.abs(wShow) < 0.03 ? COL.good : COL.warn); y += 30; }
   const g = guida(); A.testo(ctx, 'OBIETTIVO', p.x, y, COL.dim, 11); y += 18; y = A.avvolgi(ctx, g.t, p.x, y, p.w, g.c || COL.txt, 13, 16); if (g.s) y = A.avvolgi(ctx, g.s, p.x, y + 2, p.w, COL.dim, 11, 14); y += 10;
-  if (S.dvUsato > 0.5 && el.d < 110000) { const o = agg ? agg.o : bersaglio();                                   // orbite di attracco: si sceglie cliccando o con O
+  if (S.dvUsato > 0.5 && el.d < 110000) { const o = agg ? agg.o : bersaglio();
     A.testo(ctx, 'ORBITA DI ATTRACCO' + (selOrb === null ? ' (la più vicina)' : ''), p.x, y, COL.dim, 11); y += 6;
-    rOrb = ORB.map((q, i) => { const r = { x: p.x, y: y, w: p.w, h: 17 }; A.testoAdattato(ctx, (q === o ? '● ' : '○ ') + q.n, p.x, y + 13, p.w, q === o ? COL.good : COL.dim, 12); y += 17; return r; }); y += 16; } else rOrb = [];
+    rOrb = ORB.map((q, i) => { const r = { x: p.x, y: y, w: p.w, h: 17 }; A.testoAdattato(ctx, (q === o ? '● ' : '○ ') + q.n, p.x, y + 13, p.w, q === o ? COL.good : COL.dim, 12); y += 17; return r; }); y += 16; }
   y += 6; if (!barreNascoste && !S.esito) elementi().forEach(e => { if (y > H - 100) return; const col = e.ok ? COL.good : COL.ship, pre = e.lab.includes('  ·  ') ? e.lab.split('  ·  ')[0] : '', val = e.val !== undefined ? e.val : pre.length <= 18 ? pre : '', cap = e.cap !== undefined ? e.cap : val ? e.lab.slice(pre.length + 5) : e.lab;
     A.indicatore(ctx, p, y, e.tit, val, e.f, col, e.zona, e.mark); y += 26; y = A.avvolgi(ctx, cap, p.x, y, p.w, COL.dim, 10, 12) + 10; });
-  const aiuto = ['W spinta   A / D ruota   SPAZIO flip', 'Q stabilizzatore   1 / 2 tempo   O orbita', 'B barre   +/- tara il tempo', 'P pausa   N suoni' + (snd.attivo ? ' SI' : ' no') + '   INVIO riprova'];
+  const aiuto = ['↑ spinta   ← / → ruota   SPAZIO flip', 'P stabilizzatore   0-3 tempo   O orbita', 'B barre   +/- tara il tempo', 'N suoni' + (snd.attivo ? ' SI' : ' no') + '   INVIO riprova   Tab chiude'];
   if (y < H - 90) aiuto.forEach((h, i) => A.testoAdattato(ctx, h, p.x, H - 66 + i * 16, p.w, COL.dim, 11));
 }
 function guida() {
+  if (tutAttivo()) return { t: 'TUTORIAL', s: 'segui le istruzioni del capo alla radio (INVIO per proseguire, ESC per saltare)', c: COL.ship };
   if (agg) return agg.fatto ? { t: 'ORBITA AGGANCIATA: ' + agg.o.n, s: 'propellente speso ' + fmt(S.dvUsato, 2) + ' km/s · tempo di viaggio ' + fmtT(S.t) + ' · N per ritentare', c: COL.good } : { t: 'Aggancio in corso…', s: 'la tua traiettoria viene presa dall\'orbita pianificata (comandi disattivati)', c: COL.good };
   const de = Math.hypot(S.x, S.y), el = sim.elLuna();
   if (S.dvUsato < 0.05 && de < 30000) { const db = mod2pi(inizioSpinta() - betaNave()), tt = db / (nTerra() - T.N_M);
-    if (mod2pi(betaNave() - inizioSpinta()) < (DV_TLI / sim.P.acc) * (nTerra() - T.N_M)) return { t: 'ORA: tieni premuto W', s: 'rilascia quando la barra in basso arriva al segno verde', c: COL.good };
-    return { t: 'Aspetta la finestra di lancio: fra ' + fmtT(tt), s: 'scegli il tempo (1 o 2); quando la nave entra nella zona luminosa dell\'orbita tieni W' }; }
-  if (de < 45000 && el.d > 110000 && S.dvUsato < 1.95) { const rag = prev && prev.fine === 'periluna'; return rag ? { t: 'Rilascia W: la traiettoria raggiunge la Luna', s: 'ora puoi accelerare il tempo', c: COL.good } : { t: 'Continua a spingere', s: 'la barra in basso deve arrivare al segno verde', c: COL.warn }; }
+    if (mod2pi(betaNave() - inizioSpinta()) < (DV_TLI / sim.P.acc) * (nTerra() - T.N_M)) return { t: 'ORA: tieni premuta ↑', s: 'rilascia quando l\'arco attorno alla nave arriva al segno verde', c: COL.good };
+    return { t: 'Aspetta la finestra di lancio: fra ' + fmtFra(tt), s: 'scegli il tempo (1 o 2); quando la nave entra nella zona luminosa dell\'orbita tieni ↑' }; }
+  if (de < 45000 && el.d > 110000 && S.dvUsato < 1.95) { const rag = prev && prev.fine === 'periluna'; return rag ? { t: 'Rilascia ↑: la traiettoria raggiunge la Luna', s: 'ora puoi accelerare il tempo', c: COL.good } : { t: 'Continua a spingere', s: 'l\'arco attorno alla nave deve arrivare al segno verde', c: COL.warn }; }
   const o = bersaglio();
   if (el.d > 110000) { const rag = prev && prev.fine === 'periluna';
-    if (!rag) return { t: 'La traiettoria non raggiunge la Luna', s: 'ruota la nave (A/D) e dai piccoli colpi di W per spostare la linea', c: COL.warn };
-    const alt = prev.dMin - T.R_M; return { t: 'Passaggio a ' + fmt(alt) + ' km dalla Luna', s: 'per l\'orbita "' + o.n + '" serve passare a ' + fmt(o.rp) + ' ± ' + TOLRP + ' km. Ruota (A/D) e spingi (W) per correggere', c: Math.abs(alt - o.rp) <= TOLRP ? COL.good : COL.warn }; }
+    if (!rag) return { t: 'La traiettoria non raggiunge la Luna', s: 'ruota la nave (← →) e dai piccoli colpi di ↑ per spostare la linea', c: COL.warn };
+    const alt = prev.dMin - T.R_M; return { t: 'Passaggio a ' + fmt(alt) + ' km dalla Luna', s: 'per l\'orbita "' + o.n + '" serve passare a ' + fmt(o.rp) + ' ± ' + TOLRP + ' km. Ruota (← →) e spingi (↑) per correggere', c: Math.abs(alt - o.rp) <= TOLRP ? COL.good : COL.warn }; }
   if (!legataLuna(el)) { const rv = (S.x - sim.luna().x) * (S.vx - sim.luna().vx) + (S.y - sim.luna().y) * (S.vy - sim.luna().vy), tp = prev && prev.fine === 'periluna' ? prev.tMin - S.t : -1;
-    if (prev && prev.fine === 'schianto_luna') return { t: 'La traiettoria finisce sulla Luna', s: 'ruota la nave (A/D) e spingi (W) per spostare il passaggio', c: COL.bad };
+    if (prev && prev.fine === 'schianto_luna') return { t: 'La traiettoria finisce sulla Luna', s: 'ruota la nave (← →) e spingi (↑) per spostare il passaggio', c: COL.bad };
     const alt = prev && prev.fine === 'periluna' ? prev.dMin - T.R_M : null, giusta = alt !== null && Math.abs(alt - o.rp) <= TOLRP;
-    if (rv > 0 || (tp >= 0 && tp < 3600)) return giusta || rv > 0 ? { t: 'FRENA ORA: gira la nave (Spazio) e tieni W', s: 'la barra di frenata deve svuotarsi: la Luna ti lega in un\'orbita da sistemare', c: COL.good } : { t: 'Quota di passaggio sbagliata', s: 'portala a ' + fmt(o.rp) + ' ± ' + TOLRP + ' km con A/D prima del punto più vicino', c: COL.warn };
-    return { t: giusta ? 'Quota giusta: ti stai avvicinando' : 'Ti stai avvicinando: correggi la quota di passaggio', s: (giusta ? 'frenerai fra ' : 'punto più vicino fra ') + (tp >= 0 ? fmtT(tp) : '—'), c: giusta ? COL.good : COL.warn }; }
+    if (rv > 0 || (tp >= 0 && tp < 3600)) return giusta || rv > 0 ? { t: 'FRENA ORA: gira la nave (Spazio) e tieni ↑', s: 'la barra di frenata deve svuotarsi: la Luna ti lega in un\'orbita da sistemare', c: COL.good } : { t: 'Quota di passaggio sbagliata', s: 'portala a ' + fmt(o.rp) + ' ± ' + TOLRP + ' km con A/D prima del punto più vicino', c: COL.warn };
+    return { t: giusta ? 'Quota giusta: ti stai avvicinando' : 'Ti stai avvicinando: correggi la quota di passaggio', s: (giusta ? 'frenerai fra ' : 'punto più vicino fra ') + (tp >= 0 ? fmtFra(tp) : '—'), c: giusta ? COL.good : COL.warn }; }
   // orbita legata: confronta con l'obiettivo
   const dRp = el.rp - T.R_M - o.rp, dRa = el.ra - T.R_M - o.ra, okRp = Math.abs(dRp) <= TOLRP, okRa = Math.abs(dRa) <= tolRa(o), tmn = ext ? Math.max(0, ext.mn.t - S.t) : 0, tmx = ext ? Math.max(0, ext.mx.t - S.t) : 0;
-  if (el.rp - T.R_M < 50) return { t: 'Orbita troppo bassa: rischio di impatto', s: 'spingi avanti (W) al punto più alto per alzare il punto più basso', c: COL.bad };
+  if (el.rp - T.R_M < 50) return { t: 'Orbita troppo bassa: rischio di impatto', s: 'spingi avanti (↑) al punto più alto per alzare il punto più basso', c: COL.bad };
   if (okRp && okRa) return { t: 'Orbita giusta: non spingere', s: 'resta così ' + T.TENUTA + ' s di gioco (accelera il tempo)', c: COL.good };
-  if (!okRa) return dRa > 0 ? { t: 'Orbita troppo alta: gira (Spazio) e frena (W) al punto più basso', s: 'punto più basso fra ' + fmtT(tmn) + '; frena finché il "punto più alto" entra nella zona verde', c: COL.warn } : { t: 'Orbita troppo stretta: spingi in avanti (W) al punto più basso', s: 'punto più basso fra ' + fmtT(tmn), c: COL.warn };
-  return dRp > 0 ? { t: 'Il punto più basso è troppo alto: gira (Spazio) e frena (W) al punto più alto', s: 'punto più alto fra ' + fmtT(tmx), c: COL.warn } : { t: 'Il punto più basso è troppo basso: spingi in avanti (W) al punto più alto', s: 'punto più alto fra ' + fmtT(tmx), c: COL.warn };
+  if (!okRa) return dRa > 0 ? { t: 'Orbita troppo alta: gira (Spazio) e frena (↑) al punto più basso', s: 'punto più basso fra ' + fmtFra(tmn) + '; frena finché il "punto più alto" entra nella zona verde', c: COL.warn } : { t: 'Orbita troppo stretta: spingi in avanti (↑) al punto più basso', s: 'punto più basso fra ' + fmtFra(tmn), c: COL.warn };
+  return dRp > 0 ? { t: 'Il punto più basso è troppo alto: gira (Spazio) e frena (↑) al punto più alto', s: 'punto più alto fra ' + fmtFra(tmx), c: COL.warn } : { t: 'Il punto più basso è troppo basso: spingi in avanti (↑) al punto più alto', s: 'punto più alto fra ' + fmtFra(tmx), c: COL.warn };
 }
 function esito() {                                                                       // riepilogo a fine tentativo (stesso stile del docking)
-  if (!risultato || (!S.esito && !(agg && agg.fatto))) return; const r = risultato, ok = r.esito === 'orbita', A = Aspetto, T_ = COL.txt, D_ = COL.dim, O_ = COL.port, rec = nuoviRecord || {};
-  const titoli = { orbita: 'ORBITA RAGGIUNTA', schianto_luna: 'IMPATTO SULLA LUNA', schianto_terra: 'RIENTRO NON CONTROLLATO', persa: 'NAVE PERSA NELLO SPAZIO' }, perc = Math.round(r.dv / sim.P.dvMax * 100);
+  if (tutAttivo() || !risultato || (!S.esito && !(agg && agg.fatto))) return; if (boom && performance.now() - boom.t0 < 2600) return; /* dopo la distruzione il riepilogo compare a esplosione quasi finita, come nel docking */ const r = risultato, ok = r.esito === 'orbita', A = Aspetto, T_ = COL.txt, D_ = COL.dim, O_ = COL.port, rec = nuoviRecord || {};
+  const titoli = { orbita: 'ORBITA RAGGIUNTA', schianto_luna: 'IMPATTO SULLA LUNA', schianto_terra: 'RIENTRO NON CONTROLLATO', persa: 'NAVE PERSA NELLO SPAZIO', deriva: 'SENZA PROPELLENTE' }, perc = Math.round(r.dv / sim.P.dvMax * 100);
   const righe = [
-    [ok ? 'La navetta è stata agganciata all\'orbita di attracco "' + r.orbita + '".' : { schianto_luna: 'La navetta ha toccato la superficie lunare.', schianto_terra: 'La navetta è rientrata nell\'atmosfera terrestre.', persa: 'La navetta è uscita dal sistema Terra-Luna.' }[r.esito], T_], ['', T_],
+    [ok ? 'La navetta è stata agganciata all\'orbita di attracco "' + r.orbita + '".' : { schianto_luna: 'La navetta ha toccato la superficie lunare.', schianto_terra: 'La navetta è rientrata nell\'atmosfera terrestre.', persa: 'La navetta è uscita dal sistema Terra-Luna.', deriva: 'La navetta orbita attorno alla Luna senza propellente, in un\'orbita che non è di attracco.' }[r.esito], T_], ['', T_],
     ['Tempo di missione   ' + fmtT(r.tMissione) + (ok && rec.prima && rec.prima.tempo !== null ? '      record: ' + fmtT(rec.prima.tempo) : ''), rec.tempo ? COL.good : T_],
     ['Tempo di gioco      ' + fmtR(r.tReale), T_],
     ['Propellente usato   ' + fmt(r.dv, 2) + ' km/s  (' + perc + '% del serbatoio)' + (ok && rec.prima && rec.prima.dv !== null ? '      record: ' + fmt(rec.prima.dv, 2) + ' km/s' : ''), rec.dv ? COL.good : T_],
@@ -817,19 +2062,27 @@ function esito() {                                                              
   if (notaLog) righe.push([notaLog, D_, { center: true }]); righe.push(['', T_], ['INVIO riprova     H guida     N suoni', O_, { center: true }]);
   A.overlay(ctx, AW, H, righe, titoli[r.esito], ok ? COL.good : COL.bad, true);
 }
+function avviaTutorial() { inizio = false; intro = false; nuova(); tutAvvia(); }        // l'INVIO iniziale e' anche il primo gesto dell'utente: da qui l'audio e' acceso fin dalla prima battuta
+function schermataInizio() {                                                              // solo il logo e INVIO
+  const cx = W / 2, cy = H / 2, pulsa = 0.65 + 0.35 * Math.sin(performance.now() / 500);
+  ctx.save(); ctx.fillStyle = 'rgba(2,4,10,0.94)'; ctx.fillRect(0, 0, W, H);
+  ctx.letterSpacing = '10px'; testo('SPACE TRUCKER', cx + 5, cy - 20, COL.txt, 46, 'center'); ctx.letterSpacing = '0px';
+  const w = 150, h = 40, x = cx - w / 2, y = cy + 30; ctx.globalAlpha = pulsa; ctx.strokeStyle = COL.ship; ctx.lineWidth = 1.5; ctx.shadowColor = COL.ship; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.stroke(); ctx.shadowBlur = 0; ctx.letterSpacing = '4px'; testo('INVIO', cx + 2, y + 26, COL.txt, 15, 'center'); ctx.restore();
+}
 function pannelloAvvio() {                                                                // guida iniziale: cosa fare e comandi (H la riapre, in pausa)
   const A = Aspetto, T_ = COL.txt, D_ = COL.dim, O_ = COL.port, N_ = COL.ship, R = ORB.map(q => { const r = recordOrbita(q.n); return '  ' + q.n.padEnd(26) + (r.n ? 'tempo ' + fmtT(r.tempo) + '    propellente ' + fmt(r.dv, 2) + ' km/s' : 'nessun tentativo riuscito'); });
   A.overlay(ctx, AW, H, [
     ['COSA DEVI FARE', O_],
     ['Porta la navetta Gabbiano dall\'orbita di parcheggio attorno alla Terra a un\'orbita di attracco attorno alla Luna, nel minor tempo e con il minor propellente possibile.', T_],
-    ['  1  PARTENZA     la zona luminosa sull\'orbita indica dove partire. Quando la nave la raggiunge tieni premuto W finché la barra SPINTA ACCUMULATA entra nella zona verde.', D_],
-    ['  2  CROCIERA     la linea tratteggiata è la tua traiettoria futura (con i tempi di arrivo). Deve passare vicino alla Luna, alla quota dell\'orbita scelta. Correggila con piccoli tocchi di W e ruotando con A / D.', D_],
-    ['  3  ARRIVO       vicino alla Luna gira la nave (SPAZIO) e frena con W, meglio vicino al punto più basso, finché la Luna ti lega.', D_],
+    ['  1  PARTENZA     la zona luminosa sull\'orbita indica dove partire. Quando la nave la raggiunge tieni premuta ↑ finché la barra SPINTA ACCUMULATA entra nella zona verde.', D_],
+    ['  2  CROCIERA     la linea tratteggiata è la tua traiettoria futura (con i tempi di arrivo). Deve passare vicino alla Luna, alla quota dell\'orbita scelta. Correggila con piccoli tocchi di ↑ e ruotando con ← / →.', D_],
+    ['  3  ARRIVO       vicino alla Luna gira la nave (SPAZIO) e frena con ↑, meglio vicino al punto più basso, finché la Luna ti lega.', D_],
     ['  4  ORBITA       con spinte al punto più basso e al punto più alto fai combaciare la tua orbita con l\'anello verde e non spingere per 120 secondi di gioco: la nave viene agganciata.', D_],
     ['Due record per ogni orbita: tempo di missione più breve (i giorni di viaggio, non il tempo che passi a giocare) e minor propellente usato.', T_],
     ['', T_], ['COMANDI', O_],
-    ...[['W', 'spinta del motore (nella direzione della prua)'], ['A / D   (o ← / →)', 'ruota la nave: la rotazione continua finché non la contrasti'], ['SPAZIO', 'flip: mezzo giro automatico'], ['Q', 'stabilizzatore: tiene la nave allineata al moto'],
-        ['1 / 2', 'velocità del tempo: 600× / 10.000×  (+ / − per tararla)'], ['O', 'sceglie l\'orbita di attracco (o clic nel pannello)'], ['B', 'nasconde le barrette'], ['P', 'pausa'], ['N', 'suoni sì / no'], ['INVIO', 'ricomincia il tentativo'], ['H', 'questa guida']]
+    ...[['↑   (o W)', 'spinta del motore (nella direzione della prua)'], ['← / →   (o A / D)', 'ruota la nave: la rotazione continua finché non la contrasti'], ['SPAZIO', 'flip: mezzo giro automatico'], ['P', 'stabilizzatore: tiene la nave allineata al moto'],
+        ['T', 'rivede il tutorial'], ['0 / 1 / 2 / 3', 'velocità del tempo (0 è il tempo reale, non c\'è pausa): 1:1 · 1 s = 10 min · 1 s = 3 h · 1 s = 1 giorno  (+ / − per tararla)'], ['O', 'sceglie l\'orbita di attracco (o clic nel pannello)'], ['B', 'nasconde le barrette'], ['Tab', 'dati e comandi (pannello a scomparsa)'], ['N', 'suoni sì / no'], ['INVIO', 'ricomincia il tentativo'], ['H', 'questa guida']]
       .map(([k, d]) => ['  ' + k.padEnd(20) + d, T_]),
     ['', T_], ['I TUOI RECORD', O_], ...R.map(t => [t, D_]),
     ['', T_], ...(LOG_ON ? [['Test: raccoglie dati anonimi di gioco (nessun dato personale).', D_]] : LOCALE ? [['ANTEPRIMA LOCALE: i dati di gioco non vengono inviati.', COL.warn]] : []), ['versione ' + VERSION, D_],
@@ -839,6 +2092,7 @@ function pannelloAvvio() {                                                      
 
 window.__dbg = { tasti, get agg() { return agg; }, get sim() { return sim; }, forza: () => { tPrev = -1e9; aggiornaPrevisione(); }, passo: (d, i) => { if (i !== undefined) tempoIdx = i; passo(d); disegna(); }, nuova, get vista() { return VC; } };
 nuova();
+try { if (!TUT_UNA_VOLTA || !localStorage.getItem(TUT_CHIAVE)) { intro = false; inizio = true; } } catch (e) {}
 logEvent('visit', { browser: nomeBrowser(), touch: navigator.maxTouchPoints > 0, screen: screen.width + 'x' + screen.height, viewport: innerWidth + 'x' + innerHeight, lang: navigator.language, ref: document.referrer ? new URL(document.referrer).hostname : '' });
 requestAnimationFrame(ciclo);
 </script></body></html>
