@@ -1737,7 +1737,7 @@ const T = Transito, cv = document.getElementById('c'), ctx = cv.getContext('2d')
 const COL = Aspetto.COL, snd = Suoni.crea();
 const DV_TLI = 1.75, TEMPI = [{ v: 1, k: 0 }, { v: 600, k: 1 }, { v: 10800, k: 2 }, { v: 86400, k: 3 }], TEMPO_INI = 1, ORB = [{ n: 'Ellittica 300 × 5.000 km', rp: 300, ra: 5000 }, { n: 'Bassa circolare 300 km', rp: 300, ra: 300 }, { n: 'Alta circolare 2.000 km', rp: 2000, ra: 2000 }], TOLRP = 200, tolRa = o => Math.max(200, 0.1 * o.ra), TEMPO_SPINTA = 60, ACC = 0.002, AGG_MS = 6000, ALFA = 0.9, WMAX = 1.2;
 let W = 0, H = 0, PANEL = 280, AW = 0; function ridim() { const d = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; PANEL = Math.max(230, Math.min(300, Math.round(W * 0.3))); AW = W; /* la scena occupa tutto lo schermo: PANEL e' solo la larghezza del pannello dati a scomparsa (Tab) */ cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); } addEventListener('resize', ridim); ridim();
-let inizio = false, intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, boom = null, tut = null, tSenza = 0, barraTocco = -1e9, barraA = 0, warpUlt = 0, stab = true, tgPrec = null, datiAperti = false, spintaT = -1e9, ledBloccato = false, tlackT = -1e9, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
+let inizio = false, intro = true, tReale = 0, risultato = null, nuoviRecord = null, stelle = null, esitoSuonato = false, tAllarme = 0, sim, S, fase0, traccia, prev, tPrev, tempoIdx, tasti = {}, spingendo = false, flip = null, wNave = 0, rateUlt = 0, tqUlt = 0, agg = null, boom = null, tut = null, tSenza = 0, barraTocco = -1e9, barraA = 0, warpUlt = 0, stab = true, tgPrec = null, dtStab = 0, datiAperti = false, spintaT = -1e9, ledBloccato = false, tlackT = -1e9, barreNascoste = false, selOrb = null, ext = null, tUlt = 0;
 const ROT_K = 0.002;   // km: (raggio d'inerzia^2 / braccio) = 2,5^2 / 3 m. Ogni variazione di rotazione dOmega (rad/s) costa ROT_K * |dOmega| km/s di propellente, a mano o con lo stabilizzatore
 const LED_ENTRA = 0.07, LED_ESCE = 0.15, LED_LENTO = 0.45;   // rad/s: soglia per cadere nello zero, soglia per uscirne, massima velocita' di variazione (rad/s^2) per essere catturato
 const MAG_ROT = Aspetto.creaMagnete(LED_ENTRA, LED_ESCE, LED_LENTO);   // la rotazione ha un magnete sullo zero: vale in tutto il gioco, non solo nel tutorial
@@ -1746,7 +1746,7 @@ const mod2pi = x => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), ang = d
 const betaNave = () => mod2pi(Math.atan2(S.y, S.x) - sim.luna().a), nTerra = () => sim.v0 / sim.P.r0;
 const inizioSpinta = () => mod2pi(fase0.beta - 0.5 * (DV_TLI / sim.P.acc) * (nTerra() - T.N_M));
 // ---- raccolta dati anonimi dei test (stesso foglio del docking: nessun IP, nessun cookie, solo un codice casuale per sessione)
-const VERSION = 'T0.3';
+const VERSION = 'T0.3.1';
 const LOG_URL = 'https://script.google.com/macros/s/AKfycbwsUqKaMB5q3vQoT0KtUqIEEuVpVHRJU5uMuFaZ7jUvCkmjrpnMcBj86JWXHZkLhUxq/exec';
 const LOCALE = location.protocol === 'file:' || ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);           // in locale non si invia nulla (salvo ?log=1)
 const LOG_ON = !!LOG_URL && (!LOCALE || new URLSearchParams(location.search).get('log') === '1'), SESSIONE = Math.random().toString(36).slice(2, 10);
@@ -1810,7 +1810,7 @@ function passo(dtR) {
   if (sx || dx) { flip = null; stab = false; rateUlt = 0; tq = ((sx ? 1 : 0) - (dx ? 1 : 0)) * ALFA; }
   else if (flip !== null) { rateUlt = 0; const q = verso(flip); if (q === null) flip = null; else tq = q; }
   else if (stab) { let d0 = dominante(), tg = dirMoto(), warp = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito ? Math.min(TEMPO_SPINTA, TEMPI[tempoIdx].v) : TEMPI[tempoIdx].v, rr = (d0.rx * d0.vy - d0.ry * d0.vx) / (d0.rx * d0.rx + d0.ry * d0.ry) * warp;   // velocita' con cui il moto ruota, in secondi REALI
-    const fuoriSOI = d0.rx === S.x && d0.ry === S.y, tgP = tgPrec; tgPrec = tg; if (fuoriSOI && tgP !== null && dtR > 0.001 && warp === warpUlt) rr = ang(tg - tgP) / dtR;   // lontano dalla Terra la rotta sullo schermo (vista che ruota con la Luna) e' quella nel sistema rotante
+    const fuoriSOI = d0.rx === S.x && d0.ry === S.y, tgP = tgPrec; tgPrec = tg; if (fuoriSOI && tgP !== null && dtStab > 0.001 && warp === warpUlt) rr = ang(tg - tgP) / dtStab;   // diviso per il passo che ha prodotto quella variazione (quello del fotogramma PRECEDENTE), non per l'attuale: con tempi irregolari il led e i laterali scattavano   // lontano dalla Terra la rotta sullo schermo (vista che ruota con la Luna) e' quella nel sistema rotante
     const cambioTempo = warp !== warpUlt; warpUlt = warp;                                      // al cambio di scala del tempo la rotazione richiesta cambia di colpo: la nave si riallinea senza getti
     if (Math.abs(rr) > 0.8 * WMAX) { S.psi = tg; wNave = 0; rateUlt = 0; }                       // tempo molto accelerato: lo stabilizzatore tiene la nave allineata al moto
     else if (cambioTempo) { S.psi = tg; wNave = rr; rateUlt = rr; }
@@ -1820,7 +1820,7 @@ function passo(dtR) {
   tqUlt = tq; wNave = Math.max(-WMAX, Math.min(WMAX, wNave + tq * dtR)); ledMagnete(dtR, sx || dx || flip !== null || stab, (sx ? 1 : 0) - (dx ? 1 : 0)); S.psi += wNave * dtR;
   spingendo = (k('KeyW') || k('ArrowUp')) && S.dv > 0 && !S.esito;
   const v = () => TEMPI[tempoIdx].v;
-  if (!S.esito) { const w = spingendo ? Math.min(TEMPO_SPINTA, v()) : v(); const t0 = S.t; sim.avanza(dtR * w, spingendo); aggiornaOrbita(S.t - t0); if (!traccia.length || S.t - traccia[traccia.length - 1].t > 500) { traccia.push({ x: S.x, y: S.y, t: S.t }); if (traccia.length > 500) traccia.shift(); } }
+  if (!S.esito) { const w = spingendo ? Math.min(TEMPO_SPINTA, v()) : v(); const t0 = S.t; sim.avanza(dtR * w, spingendo); dtStab = dtR; aggiornaOrbita(S.t - t0); if (!traccia.length || S.t - traccia[traccia.length - 1].t > 500) { traccia.push({ x: S.x, y: S.y, t: S.t }); if (traccia.length > 500) traccia.shift(); } }
   const adesso = performance.now(); if (adesso - tPrev > (spingendo ? 30 : 120)) { aggiornaPrevisione(); tPrev = adesso; }
 }
 // estremi (piu' vicino / piu' lontano dalla Luna) lungo la previsione legata, con direzione e istante
